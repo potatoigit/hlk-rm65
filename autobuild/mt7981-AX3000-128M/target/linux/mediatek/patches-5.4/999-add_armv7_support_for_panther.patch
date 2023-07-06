@@ -1,0 +1,14 @@
+diff --git a/arch/arm/Kconfig b/arch/arm/Kconfig
+index 8a50efb..f601368 100644
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -576,6 +576,8 @@ config ARCH_MULTI_V7
+ 	select ARCH_MULTI_V6_V7
+ 	select CPU_V7
+ 	select HAVE_SMP
++	select ARM_GIC_V3
++	select HAVE_ARM_ARCH_TIMER
+ 
+ config ARCH_MULTI_V6_V7
+ 	bool
+

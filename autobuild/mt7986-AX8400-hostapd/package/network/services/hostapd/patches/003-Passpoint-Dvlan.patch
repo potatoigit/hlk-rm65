@@ -1,0 +1,977 @@
+From ec5b11ea94e8fdf8cf5802f1afa6a52ee6ba7fae Mon Sep 17 00:00:00 2001
+From: Shailesh Dixit <shailesh.dixit@mediatek.com>
+Date: Thu, 28 Apr 2022 18:38:46 +0530
+Subject: [PATCH] [WCNCR00244212][hostapd-2.10]Add Ubnt feature support
+
+[Description]
+Add support for Passpoint and dyanmic vlan
+
+[Release-log]
+N/A
+
+CR-Id: WCNCR00244212
+Change-Id: Ic2239a6c299ee81d7f5ca862000d30174c31c120
+---
+
+diff --git a/hostapd/Makefile b/hostapd/Makefile
+index 881a578..6f7beee 100644
+--- a/hostapd/Makefile
++++ b/hostapd/Makefile
+@@ -1198,6 +1198,9 @@
+ CFLAGS += -DCONFIG_HS20
+ OBJS += ../src/ap/hs20.o
+ CONFIG_INTERWORKING=y
++ifdef CONFIG_MTK_PASSPOINT
++CFLAGS += -DCONFIG_MTK_PASSPOINT
++endif
+ endif
+ 
+ ifdef CONFIG_INTERWORKING
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index 10abe96..5eae2f6 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -1455,7 +1455,179 @@
+ 	return -1;
+ }
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++int hosapd_get_plan_info(char *plan, u8 plan_id)
++{
++	int plan_length=0;
++	switch(plan_id)
++	{
++		case 0:
++		{
++			char plan_detail[] =
++				"<\?xml version=\"1.0\" encoding=\"UTF-8\"\?><Plan xmlns=\"http://www.wi-fi.org/specifications/hotspot2dot0/v1.0/aocpi\"><Description>Wi-Fi access for 1 hour, while you wait at the gate, $0.99</Description></Plan>";
++			plan_length = strlen(plan_detail);
++			if(plan_length <= 255)
++				os_memcpy(plan,plan_detail,plan_length);
++			break;
++		}
++		case 1:
++		{
++			char plan_detail[] = {
++				0x3c,0x3f,0x78,0x6d,0x6c,0x20,0x76,0x65,0x72,0x73,0x69,0x6f,0x6e,0x3d,0x22,0x31,0x2e,0x30,0x22,0x20,
++					0x65,0x6e,0x63,0x6f,0x64,0x69,0x6e,0x67,0x3d,0x22,0x55,0x54,0x46,0x2d,0x38,0x22,0x3f,0x3e,0x3c,
++					0x50,0x6c,0x61,0x6e,0x20,0x78,0x6d,0x6c,0x6e,0x73,0x3d,0x22,0x68,0x74,0x74,0x70,0x3a,0x2f,0x2f,
++					0x77,0x77,0x77,0x2e,0x77,0x69,0x2d,0x66,0x69,0x2e,0x6f,0x72,0x67,0x2f,0x73,0x70,0x65,0x63,0x69,
++					0x66,0x69,0x63,0x61,0x74,0x69,0x6f,0x6e,0x73,0x2f,0x68,0x6f,0x74,0x73,0x70,0x6f,0x74,0x32,0x64,
++					0x6f,0x74,0x30,0x2f,0x76,0x31,0x2e,0x30,0x2f,0x61,0x6f,0x63,0x70,0x69,0x22,0x3e,0x3c,0x44,0x65,
++					0x73,0x63,0x72,0x69,0x70,0x74,0x69,0x6f,0x6e,0x3e,0x41,0x63,0x63,0xc3,0xa8,0x73,0x20,0x57,0x69,
++					0x2d,0x46,0x69,0x20,0x70,0x65,0x6e,0x64,0x61,0x6e,0x74,0x20,0x31,0x20,0x68,0x65,0x75,0x72,0x65,
++					0x2c,0x20,0x70,0x65,0x6e,0x64,0x61,0x6e,0x74,0x20,0x71,0x75,0x65,0x20,0x76,0x6f,0x75,0x73,0x20,
++					0x61,0x74,0x74,0x65,0x6e,0x64,0x65,0x7a,0x20,0xc3,0xa0,0x20,0x6c,0x61,0x20,0x70,0x6f,0x72,0x74,
++					0x65,0x2c,0x20,0x30,0x2c,0x39,0x39,0x20,0x24,0x3c,0x2f,0x44,0x65,0x73,0x63,0x72,0x69,0x70,0x74,
++					0x69,0x6f,0x6e,0x3e,0x3c,0x2f,0x50,0x6c,0x61,0x6e,0x3e
++				};
++			plan_length = sizeof(plan_detail);
++			if(plan_length <= 255)
++				os_memcpy(plan,plan_detail,plan_length);
++			break;
++		}
++		case 2:
++		{	char plan_detail[] =
++			"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Plan xmlns=\"http://www.wi-fi.org/specifications/hotspot2dot0/v1.0/aocpi\"><Description>Download videos for your flight, $2.99 for 10GB</Description></Plan>";
++			plan_length = strlen(plan_detail);
++
++			if(plan_length <= 255)
++				os_memcpy(plan,plan_detail,plan_length);
++			break;
++		}
++		case 3:
++		{
++			char plan_detail[] = {
++			0x3c,0x3f,0x78,0x6d,0x6c,0x20,0x76,0x65,0x72,0x73,0x69,0x6f,0x6e,0x3d,0x22,0x31,0x2e,0x30,0x22,0x20,0x65,
++				0x6e,0x63,0x6f,0x64,0x69,0x6e,0x67,0x3d,0x22,0x55,0x54,0x46,0x2d,0x38,0x22,0x3f,0x3e,0x3c,0x50,0x6c,
++				0x61,0x6e,0x20,0x78,0x6d,0x6c,0x6e,0x73,0x3d,0x22,0x68,0x74,0x74,0x70,0x3a,0x2f,0x2f,0x77,0x77,0x77,
++				0x2e,0x77,0x69,0x2d,0x66,0x69,0x2e,0x6f,0x72,0x67,0x2f,0x73,0x70,0x65,0x63,0x69,0x66,0x69,0x63,0x61,
++				0x74,0x69,0x6f,0x6e,0x73,0x2f,0x68,0x6f,0x74,0x73,0x70,0x6f,0x74,0x32,0x64,0x6f,0x74,0x30,0x2f,0x76,
++				0x31,0x2e,0x30,0x2f,0x61,0x6f,0x63,0x70,0x69,0x22,0x3e,0x3c,0x44,0x65,0x73,0x63,0x72,0x69,0x70,0x74,
++				0x69,0x6f,0x6e,0x3e,0x54,0xc3,0xa9,0x6c,0xc3,0xa9,0x63,0x68,0x61,0x72,0x67,0x65,0x7a,0x20,0x64,0x65,
++				0x73,0x20,0x76,0x69,0x64,0xc3,0xa9,0x6f,0x73,0x20,0x70,0x6f,0x75,0x72,0x20,0x76,0x6f,0x74,0x72,0x65,
++				0x20,0x76,0x6f,0x6c,0x2c,0x20,0x32,0x2c,0x39,0x39,0x20,0x24,0x20,0x70,0x6f,0x75,0x72,0x20,0x31,0x30,
++				0x20,0x47,0x6f,0x3c,0x2f,0x44,0x65,0x73,0x63,0x72,0x69,0x70,0x74,0x69,0x6f,0x6e,0x3e,0x3c,0x2f,0x50,
++				0x6c,0x61,0x6e,0x3e
++				};
++			plan_length = sizeof(plan_detail);
++			if(plan_length <= 255)
++				os_memcpy(plan,plan_detail,plan_length);
++			break;
++		}
++		case 4:
++		{
++			char plan_detail[] =
++				"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Plan xmlns=\"http://www.wi-fi.org/specifications/hotspot2dot0/v1.0/aocpi\"><Description>Free with your subscription!</Description></Plan>";
++			plan_length = strlen(plan_detail);
++			if(plan_length <= 255)
++				os_memcpy(plan,plan_detail,plan_length);
++			break;
++		}
++		default:
++			printf("NO valid plan found \n");
++			break;
++
++	}
++	if(plan_length == 0)
++		printf("No valid plan info for plan id %d \n",plan_id);
++	return plan_length;
++}
++static int parse_advice_of_charge(struct hostapd_bss_config *bss, char *buf, int line)
++{
++	struct hostapd_advice_of_charge  *aoc;
++	struct aoc_plan_data *plan;
++	char *pos, *end;
++
++	aoc = os_realloc_array(bss->aoc_data, bss->aoc_count + 1,
++					sizeof(struct hostapd_advice_of_charge));
++	if (aoc == NULL)
++		return -1;
++
++	bss->aoc_data = aoc;
++	aoc = &bss->aoc_data[bss->aoc_count];
++
++	os_memset(aoc, 0, sizeof(*aoc));
++
++	pos = buf;
++	aoc->advice_of_charge_type = atoi(pos);
++	pos = os_strchr(pos, ':');
++	if (pos == NULL)
++		return -1;
++	pos++;
++
++	aoc->aoc_realm_encoding = atoi(pos);
++
++	pos = os_strchr(pos, ':');
++	if(pos == NULL)
++	      return -1;
++	pos++;
++	if(*pos == ':')
++	{
++		end = pos;
++		aoc->aoc_realm_len = 0;
++	}
++	else
++	{
++		end = os_strchr(pos, ':');
++		if (end == NULL || end - pos > 64)
++			return -1;
++		os_memcpy(aoc->aoc_realm, pos, end - pos);
++		aoc->aoc_realm_len = end - pos;
++	}
++
++	pos = end + 1;
++
++	while (pos && *pos) {
++		end = os_strchr(pos, ':');
++		if (end == NULL || end - pos > 3)
++			return -1;
++
++		plan = os_realloc_array(aoc->aoc_plan, aoc->aoc_plan_count + 1,
++						sizeof(struct aoc_plan_data));
++
++		if (plan == NULL)
++			return -1;
++
++		aoc->aoc_plan = plan;
++		plan = &aoc->aoc_plan[aoc->aoc_plan_count];
+ 
++		os_memset(plan, 0, sizeof(*plan));
++		os_memcpy(plan->language, pos, end - pos);
++		pos = end + 1;
++
++		end = os_strchr(pos, ':');
++		if (end == NULL || end - pos > 3)
++			return -1;
++		os_memcpy(plan->currency_code, pos, end - pos);
++		pos = end + 1;
++
++		end = os_strchr(pos, ';');
++
++		if(end == NULL)
++		{
++			u8 plan_id = atoi(pos);
++			plan->plan_information_len = hosapd_get_plan_info(plan->plan_info,plan_id);
++			pos = NULL;
++		}
++		else
++		{
++			u8 plan_id = atoi(pos);
++			plan->plan_information_len = hosapd_get_plan_info(plan->plan_info,plan_id);
++			pos = end + 1;
++		}
++		aoc->aoc_plan_count++;
++	}
++	bss->aoc_count++;
++	return 0;
++}
++
++#endif
+ static int parse_nai_realm(struct hostapd_bss_config *bss, char *buf, int line)
+ {
+ 	struct hostapd_nai_realm_data *realm;
+@@ -4038,6 +4210,15 @@
+ 	} else if (os_strcmp(buf, "nai_realm") == 0) {
+ 		if (parse_nai_realm(bss, pos, line) < 0)
+ 			return 1;
++#ifdef CONFIG_MTK_PASSPOINT
++	}else if (os_strcmp(buf, "advice_of_charge") == 0) {
++		if (parse_advice_of_charge(bss, pos, line) < 0)
++			return 1;
++#endif
++#ifdef CONFIG_MTK_PASSPOINT
++	}else if (os_strcmp(buf, "external_anqp_server_test") == 0) {
++		bss->external_anqp_server = atoi(pos);
++#endif
+ 	} else if (os_strcmp(buf, "anqp_elem") == 0) {
+ 		if (parse_anqp_elem(bss, pos, line) < 0)
+ 			return 1;
+diff --git a/src/ap/ap_config.c b/src/ap/ap_config.c
+index 7d1f6a9..5617466 100644
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -870,6 +870,24 @@
+ 	os_free(conf->roaming_consortium);
+ 	os_free(conf->venue_name);
+ 	os_free(conf->venue_url);
++#ifdef CONFIG_MTK_PASSPOINT
++	{
++		int i = 0;
++		struct hostapd_advice_of_charge *aoc;
++		aoc = conf->aoc_data;
++		if(aoc)
++		{
++			struct hostapd_advice_of_charge *tmp_aoc;
++			for(i=0; i<conf->aoc_count; i++)
++			{
++				tmp_aoc = &conf->aoc_data[i];
++				os_free(tmp_aoc->aoc_plan);
++
++			}
++			os_free(aoc);
++		}
++	}
++#endif
+ 	os_free(conf->nai_realm_data);
+ 	os_free(conf->network_auth_type);
+ 	os_free(conf->anqp_3gpp_cell_net);
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index c15bb58..ef351ae 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -234,6 +234,24 @@
+ 	} eap_method[MAX_NAI_EAP_METHODS];
+ };
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++struct aoc_plan_data{
++		u16 plan_information_len;
++		char language[3];
++		char currency_code[3];
++		char plan_info[255];
++};
++
++struct hostapd_advice_of_charge {
++	u8 advice_of_charge_type;
++	u8 aoc_realm_encoding;
++	u8 aoc_realm_len;
++	char aoc_realm[64];
++	u8 aoc_plan_count;
++	struct aoc_plan_data *aoc_plan;
++};
++#endif
++
+ struct anqp_element {
+ 	struct dl_list list;
+ 	u16 infoid;
+@@ -588,6 +606,12 @@
+ 	unsigned int nai_realm_count;
+ 	struct hostapd_nai_realm_data *nai_realm_data;
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++	int external_anqp_server;
++	unsigned int aoc_count;
++	struct hostapd_advice_of_charge *aoc_data;
++#endif
++
+ 	struct dl_list anqp_elem; /* list of struct anqp_element */
+ 
+ 	u16 gas_comeback_delay;
+diff --git a/src/ap/ap_drv_ops.c b/src/ap/ap_drv_ops.c
+index e917736..b8a2e25 100644
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
+@@ -71,8 +71,18 @@
+ 			       struct wpabuf **assocresp_ret)
+ {
+ 	struct wpabuf *beacon = NULL, *proberesp = NULL, *assocresp = NULL;
+-	u8 buf[200], *pos;
++#ifdef CONFIG_MTK_PASSPOINT
++     u8 *pos;
++     u8 *buf = NULL;
++#else
++     u8 buf[200], *pos;
++#endif
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++	buf = os_malloc(256);
++	if(buf == NULL)
++		goto fail;
++#endif
+ 	*beacon_ret = *proberesp_ret = *assocresp_ret = NULL;
+ 
+ 	pos = buf;
+@@ -206,9 +216,16 @@
+ 	*proberesp_ret = proberesp;
+ 	*assocresp_ret = assocresp;
+ 
++#if CONFIG_MTK_PASSPOINT
++	os_free(buf);
++#endif
+ 	return 0;
+ 
+ fail:
++#ifdef CONFIG_MTK_PASSPOINT
++	if(buf != NULL)
++		os_free(buf);
++#endif
+ 	wpabuf_free(beacon);
+ 	wpabuf_free(proberesp);
+ 	wpabuf_free(assocresp);
+diff --git a/src/ap/gas_serv.c b/src/ap/gas_serv.c
+index 90f1577..5029023 100644
+--- a/src/ap/gas_serv.c
++++ b/src/ap/gas_serv.c
+@@ -294,8 +294,13 @@
+ 		wpabuf_put_le16(buf, ANQP_CAG);
+ 	if (hapd->conf->venue_url || get_anqp_elem(hapd, ANQP_VENUE_URL))
+ 		wpabuf_put_le16(buf, ANQP_VENUE_URL);
++#ifdef CONFIG_MTK_PASSPOINT
++	if (hapd->conf->aoc_data || get_anqp_elem(hapd, ANQP_ADVICE_OF_CHARGE))
++		wpabuf_put_le16(buf, ANQP_ADVICE_OF_CHARGE);
++#else
+ 	if (get_anqp_elem(hapd, ANQP_ADVICE_OF_CHARGE))
+ 		wpabuf_put_le16(buf, ANQP_ADVICE_OF_CHARGE);
++#endif
+ 	if (get_anqp_elem(hapd, ANQP_LOCAL_CONTENT))
+ 		wpabuf_put_le16(buf, ANQP_LOCAL_CONTENT);
+ 	for (id = 280; id < 300; id++) {
+@@ -331,6 +336,41 @@
+ 	}
+ }
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++static void anqp_add_advice_of_charge(struct hostapd_data *hapd, struct wpabuf *buf)
++{
++	if (hapd->conf->aoc_data) {
++		u8 *len;
++		unsigned int i,j;
++		len = gas_anqp_add_element(buf, ANQP_ADVICE_OF_CHARGE);
++		for (i = 0; i < hapd->conf->aoc_count; i++) {
++			struct hostapd_advice_of_charge *aoc;
++			u32 plan_len = 0;
++			u8* plan_pos = NULL;
++			plan_pos = wpabuf_put(buf, 2); /*total plan len to be filled */
++			aoc = &hapd->conf->aoc_data[i];
++			wpabuf_put_u8(buf, aoc->advice_of_charge_type);
++			wpabuf_put_u8(buf, aoc->aoc_realm_encoding);
++			wpabuf_put_u8(buf, aoc->aoc_realm_len);
++			if(aoc->aoc_realm_len > 0)
++				wpabuf_put_data(buf, aoc->aoc_realm, aoc->aoc_realm_len);
++			plan_len += 3 + aoc->aoc_realm_len;
++			for(j=0; j < aoc->aoc_plan_count; j++)
++			{
++				struct aoc_plan_data *plan;
++				plan = &aoc->aoc_plan[j];
++				wpabuf_put_le16(buf, 6 + plan->plan_information_len);
++				wpabuf_put_data(buf, plan->language, 3);
++				wpabuf_put_data(buf, plan->currency_code, 3);
++				wpabuf_put_data(buf, plan->plan_info, plan->plan_information_len);
++				plan_len += 8 + plan->plan_information_len;
++			}
++			WPA_PUT_LE16(plan_pos, plan_len);
++		}
++		gas_anqp_set_element_len(buf, len);
++	}
++}
++#endif
+ 
+ static void anqp_add_venue_url(struct hostapd_data *hapd, struct wpabuf *buf)
+ {
+@@ -1040,6 +1080,12 @@
+ 			anqp_add_venue_url(hapd, buf);
+ 			continue;
+ 		}
++#ifdef CONFIG_MTK_PASSPOINT
++		if (extra_req[i] == ANQP_ADVICE_OF_CHARGE) {
++			anqp_add_advice_of_charge(hapd, buf);
++			continue;
++		}
++#endif
+ 		anqp_add_elem(hapd, buf, extra_req[i]);
+ 	}
+ 
+@@ -1183,6 +1229,11 @@
+ 		if (info_id == ANQP_VENUE_URL && hapd->conf->venue_url) {
+ 			wpa_printf(MSG_DEBUG,
+ 				   "ANQP: Venue URL (local)");
++#ifdef CONFIG_MTK_PASSPOINT
++		} else if (info_id == ANQP_ADVICE_OF_CHARGE && hapd->conf->aoc_data) {
++			wpa_printf(MSG_DEBUG,
++				   "ANQP: Advice Of Charge (local)");
++#endif
+ 		} else if (!get_anqp_elem(hapd, info_id)) {
+ 			wpa_printf(MSG_DEBUG, "ANQP: Unsupported Info Id %u",
+ 				   info_id);
+@@ -1741,6 +1792,7 @@
+ 	u8 dialog_token;
+ 	size_t frag_len;
+ 	int more = 0;
++	u16 status_code = (hapd->conf->external_anqp_server)?WLAN_STATUS_ADV_SRV_UNREACHABLE:WLAN_STATUS_SUCCESS;
+ 
+ 	wpa_hexdump(MSG_DEBUG, "GAS: RX GAS Comeback Request", data, len);
+ 	if (len < 1)
+@@ -1782,10 +1834,17 @@
+ 	}
+ #ifdef CONFIG_DPP
+ 	if (dialog->dpp) {
++#ifdef CONFIG_MTK_PASSPOINT
+ 		tx_buf = gas_build_comeback_resp(dialog_token,
+ 						 WLAN_STATUS_SUCCESS,
+ 						 dialog->sd_frag_id, more, 0,
+-						 10 + 2 + frag_len);
++						 10 + frag_len);
++#else
++                tx_buf = gas_build_comeback_resp(dialog_token,
++						 WLAN_STATUS_ADV_SRV_UNREACHABLE,
++						 dialog->sd_frag_id, more, 0,
++						 10 + frag_len);
++#endif
+ 		if (tx_buf) {
+ 			gas_serv_write_dpp_adv_proto(tx_buf);
+ 			wpabuf_put_le16(tx_buf, frag_len);
+@@ -1793,10 +1852,17 @@
+ 		}
+ 	} else
+ #endif /* CONFIG_DPP */
++#ifdef CONFIG_MTK_PASSPOINT
+ 	tx_buf = gas_anqp_build_comeback_resp_buf(dialog_token,
+-						  WLAN_STATUS_SUCCESS,
++						  status_code,
+ 						  dialog->sd_frag_id,
+ 						  more, 0, buf);
++#else
++	tx_buf = gas_anqp_build_comeback_resp_buf(dialog_token,
++						  WLAN_STATUS_ADV_SRV_UNREACHABLE,
++						  dialog->sd_frag_id,
++						  more, 0, buf);
++#endif
+ 	wpabuf_free(buf);
+ 	if (tx_buf == NULL) {
+ 		gas_serv_dialog_clear(dialog);
+diff --git a/src/ap/x_snoop.c b/src/ap/x_snoop.c
+index aef9a53..a2d5387 100644
+--- a/src/ap/x_snoop.c
++++ b/src/ap/x_snoop.c
+@@ -51,6 +51,7 @@
+ 		return -1;
+ 	}
+ 
++#ifndef CONFIG_MTK_PASSPOINT
+ #ifdef CONFIG_IPV6
+ 	if (hostapd_drv_br_set_net_param(hapd, DRV_BR_MULTICAST_SNOOPING, 1)) {
+ 		wpa_printf(MSG_DEBUG,
+@@ -58,6 +59,7 @@
+ 		return -1;
+ 	}
+ #endif /* CONFIG_IPV6 */
++#endif
+ 
+ 	return 0;
+ }
+diff --git a/src/common/gas_server.c b/src/common/gas_server.c
+index 5f44ffe..5a95adb 100644
+--- a/src/common/gas_server.c
++++ b/src/common/gas_server.c
+@@ -373,10 +373,10 @@
+ 
+ 	if (!gas || len < 2)
+ 		return -1;
+-
++#ifndef CONFIG_MTK_PASSPOINT
+ 	if (categ == WLAN_ACTION_PROTECTED_DUAL)
+ 		return -1; /* Not supported for now */
+-
++#endif
+ 	pos = data;
+ 	end = data + len;
+ 	action = *pos++;
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 1cb5686..03eba70 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -1182,6 +1182,435 @@
+ 	}
+ }
+ 
++#ifdef CONFIG_MTK_PASSPOINT
++
++#define OID_802_11_WNM_PROXY_ARP                0x093b
++#define ETH_P_ARP	0x0806
++
++struct proxy_arp_entry {
++	u32 ifindex;
++	u8 ip_type;
++	u8 from_ds;
++	u8 IsDAD;
++	char source_mac_addr[6];
++	char target_mac_addr[6];
++	char ip_addr[0];
++};
++
++struct _ipv6_addr {
++	union {
++		u8 ipv6Addr8[16];
++		u16 ipv6Addr16[8];
++		u32 ipv6Addr32[4]; 
++	}addr;
++#define ipv6_addr addr.ipv6Addr8
++#define ipv6_addr16 addr.ipv6Addr16
++#define ipv6_addr32 addr.ipv6Addr32
++};
++
++
++enum {
++	IPV4,
++	IPV6,
++};
++
++#define cpu2be16 host_to_be16
++
++static u16 icmpv6_csum(const char *saddr,
++					   const char *daddr,
++					   u16 len,
++					   u8 proto,
++					   const char *icmp_msg)
++{
++	struct _ipv6_addr *sa_ipv6_addr = (struct _ipv6_addr *)saddr;
++	struct _ipv6_addr *da_ipv6_addr = (struct _ipv6_addr *)daddr;
++	u32 carry, ulen, uproto;
++	u32 i;
++	u32 csum = 0x00;
++	u16 chksum;
++
++	if (len % 4)
++		return 0;
++	
++	for( i = 0; i < 4; i++)
++	{
++		csum += sa_ipv6_addr->ipv6_addr32[i];
++		carry = (csum < sa_ipv6_addr->ipv6_addr32[i]);
++		csum += carry;
++	}
++
++	for( i = 0; i < 4; i++)
++	{
++		csum += da_ipv6_addr->ipv6_addr32[i];
++		carry = (csum < da_ipv6_addr->ipv6_addr32[i]);
++		csum += carry;
++	}
++
++	ulen = htonl((u32)len);
++	csum += ulen;
++	carry = (csum < ulen);
++	csum += carry;
++
++	uproto = htonl((u32)proto);
++	csum += uproto;
++	carry = (csum < uproto);
++	csum += carry;
++	
++	for (i = 0; i < len; i += 4)
++	{
++		csum += *((u32 *)(&icmp_msg[i]));
++		carry = (csum < (*((u32 *)(&icmp_msg[i]))));
++		csum += carry;
++	}
++
++	while (csum>>16)
++		csum = (csum & 0xffff) + (csum >> 16);
++
++	chksum = ~csum;
++	
++	return chksum;
++}
++
++static void hotspot_proxy_arp_ipv6(char *buf,
++								   const char *source_mac_addr,
++								   const char *source_ip_addr,
++								   const char *target_mac_addr,
++								   const char *target_ip_addr,
++								   unsigned char IsDAD)
++{
++
++	char *pos, *pcsum, *icmpv6hdr;
++	char DadDestAddr[16]={0xff,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01};
++	u16 protocol_type = cpu2be16(0x86dd);
++	u16 payload_len = cpu2be16(0x0020);
++	u16	checksum = 0;
++	u32 icmpmsglen = 0x20;
++
++	pos = buf;
++	
++	/* DA */
++	os_memcpy(pos, source_mac_addr, 6);
++	pos += 6;
++
++	/* SA */
++	os_memcpy(pos, target_mac_addr, 6);
++	pos += 6;
++	
++	/* Protocol type */
++	os_memcpy(pos, &protocol_type, 2);
++	pos += 2;
++
++	/* Version, Traffic Class, Flow label */
++	*pos = 0x60;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	/* payload length */
++	os_memcpy(pos, &payload_len, 2);
++	pos += 2;
++
++	/* Next header */
++	*pos = 0x3a;
++	pos++;
++
++	/* Hop limit */
++	*pos = 0xff;
++	pos++;
++
++	/* source ip address */
++	os_memcpy(pos, target_ip_addr, 16);
++	pos += 16;
++
++	/* destination ip address */
++	if (IsDAD == 1) {
++		*pos = 0xff;pos++;
++		*pos = 0x02;pos++;
++		pos = pos + 13;
++		*pos = 0x01;pos++;
++	}
++	else {
++		os_memcpy(pos, source_ip_addr, 16);
++		pos += 16;
++	}
++
++	/* ICMP field */
++	icmpv6hdr = pos;
++	/* Type */
++	*pos = 0x88;
++	pos++;
++
++	/* Code */
++	*pos = 0x00;
++	pos++;
++
++	/* Checksum */
++	pcsum = pos;
++	os_memcpy(pos, &checksum, 2);
++	pos += 2;
++
++	/* flags */
++	*pos = 0x60;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	*pos = 0x00;
++	pos++;
++
++	/* targer address */
++	os_memcpy(pos, target_ip_addr, 16);
++	pos += 16;
++
++	/* Possible options */
++	/* target linker-layerr address type */
++	*pos = 0x02;
++	pos++; 
++
++	/* length */
++	*pos = 0x01;
++	pos++;
++
++	/* target link-layer address */
++	os_memcpy(pos, target_mac_addr, 6);
++	pos += 6;
++
++	/* re-calculate checksum */
++	if (IsDAD == 1)
++		checksum = icmpv6_csum(target_ip_addr, DadDestAddr, icmpmsglen, 0x3a, icmpv6hdr);
++	else
++		checksum = icmpv6_csum(target_ip_addr, source_ip_addr, icmpmsglen, 0x3a, icmpv6hdr);
++	os_memcpy(pcsum, &checksum, 2);
++}
++
++static void hotspot_proxy_arp_ipv4(char *buf,
++								   const char *source_mac_addr,
++								   const char *source_ip_addr,
++								   const char *target_mac_addr,
++								   const char *target_ip_addr,
++								   unsigned char	IsDAD)
++{
++	char *pos;
++	u16 protocol_type = cpu2be16(0x0806);
++	u16 hw_address_type = cpu2be16(0x0001);
++	u16 protocol_address_type;
++	u16 arp_operation = cpu2be16(0x0002);;
++
++	pos = buf;
++	
++	/* DA */
++	os_memcpy(pos, source_mac_addr, 6);
++	pos += 6;
++
++	/* SA */
++	os_memcpy(pos, target_mac_addr, 6);
++	pos += 6;
++
++	/* Protocol type */
++	os_memcpy(pos, &protocol_type, 2);
++	pos += 2;
++
++	/* HW address yype */
++	os_memcpy(pos, &hw_address_type, 2);
++	pos += 2;
++
++	/* Protocol address type */
++	protocol_address_type = cpu2be16(0x0800);
++	os_memcpy(pos, &protocol_address_type, 2);
++	pos += 2;
++
++	/* HW address size */
++	*pos = 0x06;
++	pos++;
++
++	/* Protocol address size */
++	*pos = 0x04;
++	pos++;
++
++	/* arp operation */
++	os_memcpy(pos, &arp_operation, 2);
++	pos += 2;
++	
++	/* Sender MAC address */
++	os_memcpy(pos, target_mac_addr, 6);
++	pos += 6;
++
++	/* Sender IP address */
++	os_memcpy(pos, target_ip_addr, 4);
++	pos += 4;
++
++	/* Target MAC address */
++	os_memcpy(pos, source_mac_addr, 6);
++	pos += 6;
++
++	/* Target IP address */
++	//if (IsDAD == 1)
++	//	os_memcpy(pos, target_ip_addr, 4);
++	//else	
++	os_memcpy(pos, source_ip_addr, 4);
++	pos += 4;
++}
++
++
++static int hotspot_event_proxy_arp(struct nl80211_global *global,
++								   const int ifindex,
++								   u8 ip_type,
++								   u8 from_ds,
++								   const char *source_mac_addr,
++								   const char *source_ip_addr,
++								   const char *target_mac_addr,
++								   const char *target_ip_addr,
++								   unsigned char IsDAD)
++{
++	int sock;
++	struct sockaddr_ll sll;
++	char *buf;
++	u8 bufsize;
++
++	/* send arp response on behalf of target */
++	sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
++	memset(&sll, 0, sizeof(sll));
++	
++	if (from_ds) {
++		/* Change interface as per SDK- Panther:lan2, other:eth0 */
++		sll.sll_ifindex = if_nametoindex("lan2");
++	
++	} else {
++		sll.sll_ifindex = ifindex;
++	}
++
++	if (ip_type == IPV4)
++		bufsize = 60;
++	else
++		bufsize = 86;
++
++	buf = os_zalloc(bufsize);
++
++	if (ip_type == IPV4)
++	{
++		hotspot_proxy_arp_ipv4(buf, source_mac_addr, source_ip_addr, 
++										target_mac_addr, target_ip_addr, IsDAD);
++	}
++
++	else
++	{
++		hotspot_proxy_arp_ipv6(buf, source_mac_addr, source_ip_addr,
++										target_mac_addr, target_ip_addr, IsDAD);
++	}
++
++	if (sendto(sock, buf, bufsize, 0, (struct sockaddr *)&sll, sizeof(sll)) < 0) {
++		return -1;
++	}
++
++	close(sock);
++
++	os_free(buf);
++	return 0;
++}
++
++
++static void event_proxy_arp(struct nl80211_global *global, char *buf)
++{
++	struct proxy_arp_entry *arp_entry = (struct proxy_arp_entry *)buf;
++	char ifname[IFNAMSIZ];
++
++	if_indextoname(arp_entry->ifindex, ifname);
++
++		if (arp_entry->ip_type == IPV4) {
++				hotspot_event_proxy_arp(global,
++									   arp_entry->ifindex,
++									   arp_entry->ip_type,
++									   arp_entry->from_ds,
++									   arp_entry->source_mac_addr,
++									   arp_entry->ip_addr,
++									   arp_entry->target_mac_addr,
++									   arp_entry->ip_addr + 4,
++									   arp_entry->IsDAD);
++	} else {
++				hotspot_event_proxy_arp(global,
++									   arp_entry->ifindex,
++									   arp_entry->ip_type,
++									   arp_entry->from_ds,
++									   arp_entry->source_mac_addr,
++									   arp_entry->ip_addr,
++									   arp_entry->target_mac_addr,
++									   arp_entry->ip_addr + 16,
++									   arp_entry->IsDAD);
++	}
++}
++#endif
++static void driver_wext_event_wireless(struct nl80211_global *global,
++                 char *data, int len)
++{               
++    struct iw_event iwe_buf, *iwe = &iwe_buf;
++    char *pos, *end, *custom, *buf /*,*assoc_info_buf, *info_pos */;
++    
++    /* info_pos = NULL; */
++	/* assoc_info_buf = NULL; */
++    pos = data;
++    end = data + len;   
++    
++    while (pos + IW_EV_LCP_LEN <= end) {
++        /* 
++ 		 * Event data may be unaligned, so make a local, aligned copy
++         * before processing. 
++         */
++        os_memcpy(&iwe_buf, pos, IW_EV_LCP_LEN);
++	
++		if (iwe->len <= IW_EV_LCP_LEN)
++            return;
++
++        custom = pos + IW_EV_POINT_LEN;
++
++        //if (drv->we_version_compiled > 18 && iwe->cmd == IWEVCUSTOM) {
++            /* WE-19 removed the pointer from struct iw_point */
++            char *dpos = (char *) &iwe_buf.u.data.length;
++            int dlen = dpos - (char *) &iwe_buf;
++            os_memcpy(dpos, pos + IW_EV_LCP_LEN,
++                  sizeof(struct iw_event) - dlen);
++        //} else {
++            //os_memcpy(&iwe_buf, pos, sizeof(struct iw_event));
++            //custom += IW_EV_POINT_OFF;
++		//}
++		
++		switch (iwe->cmd) {
++        case IWEVCUSTOM:
++			if (custom + iwe->u.data.length > end)
++               	return;
++           	buf = os_malloc(iwe->u.data.length + 1);
++            if (buf == NULL)
++                return;
++            os_memcpy(buf, custom, iwe->u.data.length);
++            buf[iwe->u.data.length] = '\0';
++
++            switch (iwe->u.data.flags) {
++#ifdef CONFIG_MTK_PASSPOINT
++			case OID_802_11_WNM_PROXY_ARP:
++				event_proxy_arp(global, buf);
++				break;
++#endif
++			default:
++				break; 
++			}
++
++           	os_free(buf);
++            break;
++        }
++
++        pos += iwe->len;
++    }
++}
+ 
+ static void wpa_driver_nl80211_event_rtm_newlink(void *ctx,
+ 						 struct ifinfomsg *ifi,
+@@ -1217,7 +1646,16 @@
+ 			pos += os_snprintf(pos, end - pos, " master=%u", brid);
+ 			break;
+ 		case IFLA_WIRELESS:
++		{
++#ifdef CONFIG_MTK_PASSPOINT
++			int rta_len = RTA_ALIGN(sizeof(struct rtattr));
++			 driver_wext_event_wireless(
++                                                    global,
++                                                    ((char *) attr) + rta_len,
++                                                    attr->rta_len - rta_len);
++#endif
+ 			pos += os_snprintf(pos, end - pos, " wext");
++		}
+ 			break;
+ 		case IFLA_OPERSTATE:
+ 			pos += os_snprintf(pos, end - pos, " operstate=%u",
+@@ -7316,8 +7754,8 @@
+ static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
+ 			     const char *ifname, int vlan_id)
+ {
+-#if 0 /*Mediatke Dynamic Vlan Support */
+-	int skfd;
++#if 1 /*Mediatke Dynamic Vlan Support */
++	int skfd;			  
+ 	struct iwreq iwr;
+ 	struct sta_vlan_param* vlan_param;
+ 	char *pos;

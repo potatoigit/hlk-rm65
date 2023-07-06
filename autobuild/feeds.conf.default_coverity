@@ -1,0 +1,7 @@
+src-git mtk_openwrt_feed https://gerrit.mediatek.inc/openwrt/feeds/mtk_openwrt_feeds
+src-git packages https://gerrit.mediatek.inc/openwrt/feeds/packages^afd4a7beff3ab66f76a541306d2985d7f61026b2
+src-git luci https://gerrit.mediatek.inc/openwrt/feeds/luci^a993714790cfe22bfae3ccd2f8b036b1434fe244
+src-git routing https://gerrit.mediatek.inc/openwrt/feeds/routing^b987eb3a9093f7fcf68d250d0c58f64ca13f0bc0
+#src-git telephony https://git.openwrt.org/feed/telephony.git;openwrt-21.02
+#src-git freifunk https://github.com/freifunk/openwrt-packages.git;openwrt-21.02
+#src-link custom /usr/src/openwrt/custom-feed

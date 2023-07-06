@@ -1,0 +1,112 @@
+From b3776dbda53d00b351d6fda18f5535338fae8d87 Mon Sep 17 00:00:00 2001
+From: mtk23508 <gurpreet.bhatia@mediatek.com>
+Date: Thu, 09 Jun 2022 19:50:29 +0800
+Subject: [PATCH] [WCNCR00270435][[KT] [7981] MAP R3 Onboarding Support for Hostapd]
+
+[Description]
+Hostapd changes to support MAP R3(DPP) Onboarding for hostapd build.
+[Compile Time Flag - HOSTAPD_MAPR3_SUPPORT, Disabled by default]
+
+[Release-log]
+N/A
+
+Signed-off-by: mtk23508 <gurpreet.bhatia@mediatek.com>
+CR-Id: WCNCR00270435
+Change-Id: Ib5e05c11acef9e3a0edf2e70d09462b9ea9d30ab
+---
+
+diff --git a/hostapd/Makefile b/hostapd/Makefile
+index 035d4fe..c712633 100644
+--- a/hostapd/Makefile
++++ b/hostapd/Makefile
+@@ -281,6 +281,9 @@
+ #Mediatek MAP support in hostapd
+ #CFLAGS += -DHOSTAPD_MAP_SUPPORT
+ 
++#Mediatek MAPR3 support in hostapd
++#CFLAGS += -DHOSTAPD_MAPR3_SUPPORT
++
+ #save pmkid generated in hostapd to drivers
+ CFLAGS += -DHOSTAPD_PMKID_IN_DRIVER_SUPPORT
+ ifdef CONFIG_IEEE80211R
+diff --git a/hostapd/hostapd_cli.c b/hostapd/hostapd_cli.c
+index ba17205..cc406c3 100644
+--- a/hostapd/hostapd_cli.c
++++ b/hostapd/hostapd_cli.c
+@@ -1295,8 +1295,29 @@
+ {
+ 	return wpa_ctrl_command(ctrl, "PMKSA");
+ }
++#ifdef HOSTAPD_MAPR3_SUPPORT
++static int hostapd_cli_cmd_pmksa_add(struct wpa_ctrl *ctrl, int argc, char *argv[])
++{
++	char cmd[384];
++	int res;
++
++	if (argc != 5) {
++		printf("Invalid pmksa_add command: needs 5 arguments, it has, %d\n",argc);
++		return -1;
++	}
++
++	res = os_snprintf(cmd, sizeof(cmd), "PMKSA_ADD %s %s %s %s %s",
++			  argv[0], argv[1], argv[2], argv[3], argv[4]);
+ 
++	/*<STA addr> <PMKID> <PMK> <expiration in seconds> <akmp>*/
++	if (os_snprintf_error(sizeof(cmd), res)) {
++		printf("Too long PMKSA_ADD command.\n");
++		return -1;
++	}
+ 
++	return wpa_ctrl_command(ctrl,cmd);
++}
++#endif
+ static int hostapd_cli_cmd_pmksa_flush(struct wpa_ctrl *ctrl, int argc,
+ 				       char *argv[])
+ {
+@@ -1693,6 +1714,10 @@
+ 	  "[level] = show/change log verbosity level" },
+ 	{ "pmksa", hostapd_cli_cmd_pmksa, NULL,
+ 	  " = show PMKSA cache entries" },
++#ifdef HOSTAPD_MAPR3_SUPPORT
++	{ "pmksa_add", hostapd_cli_cmd_pmksa_add, NULL,
++	  " = add PMKSA cache entry" },
++#endif
+ 	{ "pmksa_flush", hostapd_cli_cmd_pmksa_flush, NULL,
+ 	  " = flush PMKSA cache" },
+ 	{ "set_neighbor", hostapd_cli_cmd_set_neighbor, NULL,
+diff --git a/src/ap/wpa_auth.c b/src/ap/wpa_auth.c
+index db5a9b0..eec82af 100644
+--- a/src/ap/wpa_auth.c
++++ b/src/ap/wpa_auth.c
+@@ -2943,6 +2943,9 @@
+ 	struct wpa_eapol_ie_parse kde;
+ 	int vlan_id = 0;
+ 	int owe_ptk_workaround = !!wpa_auth->conf.owe_ptk_workaround;
++#ifdef HOSTAPD_MAPR3_SUPPORT
++	struct wpa_auth_config *conf = &sm->wpa_auth->conf;
++#endif
+ 
+ 	SM_ENTRY_MA(WPA_PTK, PTKCALCNEGOTIATING, wpa_ptk);
+ 	sm->EAPOLKeyReceived = false;
+@@ -3073,6 +3076,11 @@
+ 				   WLAN_REASON_PREV_AUTH_NOT_VALID);
+ 		return;
+ 	}
++
++#ifdef HOSTAPD_MAPR3_SUPPORT
++	/* Check for RSNXE only if it is sae and sae_pwe is enabled*/
++	if (wpa_key_mgmt_sae(sm->wpa_key_mgmt) && (wpa_auth->conf.sae_pwe != 0)) {
++#endif
+ 	if ((!sm->rsnxe && kde.rsnxe) ||
+ 	    (sm->rsnxe && !kde.rsnxe) ||
+ 	    (sm->rsnxe && kde.rsnxe &&
+@@ -3089,6 +3097,9 @@
+ 				   WLAN_REASON_PREV_AUTH_NOT_VALID);
+ 		return;
+ 	}
++#ifdef HOSTAPD_MAPR3_SUPPORT
++	}
++#endif
+ #ifdef CONFIG_OCV
+ 	if (wpa_auth_uses_ocv(sm)) {
+ 		struct wpa_channel_info ci;

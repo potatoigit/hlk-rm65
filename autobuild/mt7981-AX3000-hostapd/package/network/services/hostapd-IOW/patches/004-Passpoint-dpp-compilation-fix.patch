@@ -1,0 +1,31 @@
+From 6abc5851d9143ac9db4da22d4342cab36641b2d2 Mon Sep 17 00:00:00 2001
+From: mtk23508 <gurpreet.bhatia@mediatek.com>
+Date: Thu, 09 Jun 2022 14:35:46 +0800
+Subject: [PATCH] [WCNCR00270460][[hostapd-2.10] Compilation Error when DPP support enabled and MTK passpoint disabled]
+
+[Description]
+Added the code under MTK PASSPOINT related code under its compile
+time flag
+
+[Release-log]
+N/A
+
+Signed-off-by: mtk23508 <gurpreet.bhatia@mediatek.com>
+CR-Id: WCNCR00270460
+Change-Id: I6335b560ea0d3856b5556bc6b5ebcfe1724aaf26
+---
+
+diff --git a/src/ap/gas_serv.c b/src/ap/gas_serv.c
+index 5029023..761be2c 100644
+--- a/src/ap/gas_serv.c
++++ b/src/ap/gas_serv.c
+@@ -1792,7 +1792,9 @@
+ 	u8 dialog_token;
+ 	size_t frag_len;
+ 	int more = 0;
++#ifdef CONFIG_MTK_PASSPOINT
+ 	u16 status_code = (hapd->conf->external_anqp_server)?WLAN_STATUS_ADV_SRV_UNREACHABLE:WLAN_STATUS_SUCCESS;
++#endif
+ 
+ 	wpa_hexdump(MSG_DEBUG, "GAS: RX GAS Comeback Request", data, len);
+ 	if (len < 1)

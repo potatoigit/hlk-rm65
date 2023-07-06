@@ -1,0 +1,73 @@
+Index: linux-5.4.132/arch/arm64/boot/dts/mediatek/mt7622.dtsi
+===================================================================
+--- linux-5.4.132.orig/arch/arm64/boot/dts/mediatek/mt7622.dtsi
++++ linux-5.4.132/arch/arm64/boot/dts/mediatek/mt7622.dtsi
+@@ -230,6 +230,11 @@
+ 		#reset-cells = <1>;
+ 	};
+ 
++	pcie_mirror: pcie_mirror@10000400 {
++		compatible = "mediatek,pcie-mirror";
++		reg = <0 0x10000400 0 0x10>;
++	};
++
+ 	scpsys: scpsys@10006000 {
+ 		compatible = "mediatek,mt7622-scpsys",
+ 			     "syscon";
+@@ -282,6 +287,26 @@
+ 		#clock-cells = <1>;
+ 	};
+ 
++	wed: wed@1020b000 {
++		compatible = "mediatek,wed";
++		wed_num = <2>;
++		/* add this property for wed get the pci slot number. */
++		pci_slot_map = <0>, <1>;
++		reg = <0 0x1020a000 0 0x1000>,
++		      <0 0x1020b000 0 0x1000>;
++		interrupts = <GIC_SPI 214 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 215 IRQ_TYPE_LEVEL_LOW>;
++	};
++
++	wed2: wed2@1020b000 {
++		compatible = "mediatek,wed2";
++		wed_num = <2>;
++		reg = <0 0x1020a000 0 0x1000>,
++		      <0 0x1020b000 0 0x1000>;
++		interrupts = <GIC_SPI 214 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 215 IRQ_TYPE_LEVEL_LOW>;
++	};
++
+ 	topckgen: topckgen@10210000 {
+ 		compatible = "mediatek,mt7622-topckgen",
+ 			     "syscon";
+@@ -930,6 +955,29 @@
+ 		status = "disabled";
+ 	};
+ 
++	hnat: hnat@1b000000 {
++		compatible = "mediatek,mtk-hnat_v2";
++		reg = <0 0x1b100000 0 0x3000>;
++		resets = <&ethsys 0>;
++		reset-names = "mtketh";
++		mtketh-wan = "wan";
++		mtketh-lan = "lan";
++		mtketh-max-gmac = <1>;
++		status = "okay";
++	};
++
++	wdma: wdma@1b102800 {
++		compatible = "mediatek,wed-wdma";
++		reg = <0 0x1b102800 0 0x400>,
++		      <0 0x1b102c00 0 0x400>;
++		interrupts = <GIC_SPI 216 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 217 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 218 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 219 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 220 IRQ_TYPE_LEVEL_LOW>,
++			     <GIC_SPI 221 IRQ_TYPE_LEVEL_LOW>;
++	};
++
+ 	sgmiisys: sgmiisys@1b128000 {
+ 		compatible = "mediatek,mt7622-sgmiisys",
+ 			     "syscon";

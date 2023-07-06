@@ -1,0 +1,12 @@
+diff -urN ori/scripts/Makefile new/scripts/Makefile
+--- ori/scripts/Makefile	2022-05-16 01:54:48.000000000 +0800
++++ new/scripts/Makefile	2022-07-20 19:52:32.536873000 +0800
+@@ -10,7 +10,7 @@
+ 
+ HOST_EXTRACFLAGS += -I$(srctree)/tools/include
+ 
+-CRYPTO_LIBS = $(shell pkg-config --libs libcrypto 2> /dev/null || echo -lcrypto)
++CRYPTO_LIBS = $(shell pkg-config --libs libcrypto 2> /dev/null || echo -lcrypto) -pthread
+ CRYPTO_CFLAGS = $(shell pkg-config --cflags libcrypto 2> /dev/null)
+ 
+ hostprogs-$(CONFIG_BUILD_BIN2C)  += bin2c

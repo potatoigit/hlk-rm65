@@ -1,0 +1,40 @@
+From 0fa2b3e5dd91e02ee06f53a4504e244177c4ca3f Mon Sep 17 00:00:00 2001
+From: vikas sukhija <vikas.sukhija@mediatek.com>
+Date: Fri, 25 Mar 2022 10:12:57 +0530
+Subject: [PATCH] [WCNCR00257153][Add support for hostapd-2.10]
+
+[Description]
+Avoid driver crash if interface mac address is empty
+Needed for SINGLE BAND SUPPORT IN DBDC
+
+[Release-log]
+
+CR-Id: WCNCR00257153
+Change-Id: I8b7756d23a6c795345fd01a5d480b84a4754fed5
+---
+
+diff --git a/src/drivers/linux_ioctl.c b/src/drivers/linux_ioctl.c
+index 7edb9df..0db6634 100644
+--- a/src/drivers/linux_ioctl.c
++++ b/src/drivers/linux_ioctl.c
+@@ -81,6 +81,7 @@
+ int linux_get_ifhwaddr(int sock, const char *ifname, u8 *addr)
+ {
+ 	struct ifreq ifr;
++	const unsigned char empty[ETH_ALEN] = { 0, };
+ 
+ 	os_memset(&ifr, 0, sizeof(ifr));
+ 	os_strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
+@@ -95,6 +96,12 @@
+ 			   ifname, ifr.ifr_hwaddr.sa_family);
+ 		return -1;
+ 	}
++
++	if (os_memcmp(ifr.ifr_hwaddr.sa_data, empty, ETH_ALEN) == 0) {
++		wpa_printf(MSG_ERROR, "%s: MAC Adress is Empty", ifname);
++		return -1;
++	}
++
+ 	os_memcpy(addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+ 
+ 	return 0;

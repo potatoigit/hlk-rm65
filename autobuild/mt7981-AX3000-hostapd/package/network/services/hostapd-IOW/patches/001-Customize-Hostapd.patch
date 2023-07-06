@@ -1,0 +1,1095 @@
+From b00769897ee51f7df8ca5f21b9bd936efda71e0a Mon Sep 17 00:00:00 2001
+From: vikas sukhija <vikas.sukhija@mediatek.com>
+Date: Tue, 15 Mar 2022 18:24:24 +0530
+Subject: [PATCH] [WCNCR00257153][Add support for hostapd-2.10]
+
+[Description]Add fixes in basic hostapd-2.10 code
+
+[Release-log]
+
+CR-Id: WCNCR00257153
+---
+
+diff --git a/hostapd/Makefile b/hostapd/Makefile
+index e37c13b..881a578 100644
+--- a/hostapd/Makefile
++++ b/hostapd/Makefile
+@@ -25,6 +25,9 @@
+ CFLAGS += -I$(abspath ../src)
+ CFLAGS += -I$(abspath ../src/utils)
+ 
++#CFLAGS += -I$(ROOTDIR)/lib/libnl/include -I$(ROOTDIR)/user/openssl-1.0.1f/include
++CFLAGS += -I$(ROOTDIR)/lib/libnl/include -I$(ROOTDIR)/user/openssl/openssl-1.0.1f/include
++
+ export BINDIR ?= /usr/local/bin/
+ 
+ ifndef CONFIG_NO_GITVER
+@@ -276,8 +279,11 @@
+ OBJS += ../src/common/ocv.o
+ endif
+ 
++#save pmkid generated in hostapd to drivers
++CFLAGS += -DHOSTAPD_PMKID_IN_DRIVER_SUPPORT
+ ifdef CONFIG_IEEE80211R
+ CFLAGS += -DCONFIG_IEEE80211R -DCONFIG_IEEE80211R_AP
++CFLAGS += -DHOSTAPD_11R_SUPPORT
+ OBJS += ../src/ap/wpa_auth_ft.o
+ NEED_AES_UNWRAP=y
+ NEED_AES_SIV=y
+@@ -1275,7 +1281,10 @@
+ $(DESTDIR)$(BINDIR)/%: %
+ 	install -D $(<) $(@)
+ 
+-install: $(addprefix $(DESTDIR)$(BINDIR)/,$(ALL))
++#install: $(addprefix $(DESTDIR)$(BINDIR)/,$(ALL))
++install: all
++	mkdir -p $(DESTDIR)/usr/local/bin
++	for i in $(ALL); do cp -f $$i $(DESTDIR)/usr/local/bin/$$i; done
+ 
+ _OBJS_VAR := OBJS
+ include ../src/objs.mk
+@@ -1284,6 +1293,10 @@
+ 	$(Q)$(CC) $(LDFLAGS) -o hostapd $(OBJS) $(LIBS)
+ 	@$(E) "  LD " $@
+ 
++openssl:
++#	$(MAKE) -C $(ROOTDIR)/user/openssl-1.0.1f all
++	$(MAKE) -C $(ROOTDIR)/user/openssl/openssl-1.0.1f all
++
+ ifdef CONFIG_WPA_TRACE
+ OBJS_c += ../src/utils/trace.o
+ endif
+@@ -1325,6 +1338,9 @@
+ HOBJS += ../src/crypto/crypto_linux.o
+ endif
+ 
++#LIBS += -L$(ROOTDIR)/user/openssl-1.0.1f -lssl -lcrypto
++LIBS += -L$(ROOTDIR)/user/openssl/openssl-1.0.1f -lssl -lcrypto
++
+ SOBJS += sae_pk_gen.o
+ SOBJS +=  ../src/utils/common.o
+ SOBJS += ../src/utils/os_$(CONFIG_OS).o
+@@ -1376,3 +1392,11 @@
+ 	rm -f sae_pk_gen
+ 	rm -f lcov.info
+ 	rm -rf lcov-html
++
++romfs:
++#	$(MAKE) -C $(ROOTDIR)/user/openssl-1.0.1f romfs
++	$(MAKE) -C $(ROOTDIR)/user/openssl/openssl-1.0.1f romfs
++	$(ROMFSINST) hostapd /bin/hostapd
++#	$(ROMFSINST) hostapd /bin/hostapd
++	#$(ROMFSINST) wpa_passphrase /bin/wpa_passphrase
++	$(ROMFSINST) hostapd_cli /bin/hostapd_cli
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index b14728d..10abe96 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -4318,12 +4318,33 @@
+ 	} else if (os_strcmp(buf, "sae_sync") == 0) {
+ 		bss->sae_sync = atoi(pos);
+ 	} else if (os_strcmp(buf, "sae_groups") == 0) {
+-		if (hostapd_parse_intlist(&bss->sae_groups, pos)) {
++			wpa_printf(MSG_ERROR,
++				   "SAE Groups*******************************************");
++			int i = 0,j = 0, is_group_supported = 0;
++			int sae_supported_groups[] = {15,16,17,18,19,20,21,28,29,30};/*15-18 FCC, 19-21 and 28-30 ECC */
++			if (hostapd_parse_intlist(&bss->sae_groups, pos)) {
+ 			wpa_printf(MSG_ERROR,
+ 				   "Line %d: Invalid sae_groups value '%s'",
+ 				   line, pos);
+ 			return 1;
+ 		}
++		/*SAE Cert 4.1.1*/
++		for (i = 0; bss->sae_groups[i] > 0; i++) {
++			is_group_supported = 0;
++			for(j =0 ;j < 10; j++){
++				if (bss->sae_groups[i] == sae_supported_groups[j]){
++					is_group_supported = 1;
++					wpa_printf(MSG_ERROR,
++					"Group supported :%d",bss->sae_groups[i]);
++					break;
++				}
++			}
++			if(is_group_supported == 0){
++				wpa_printf(MSG_ERROR,
++				"Group not supported :%d",bss->sae_groups[i]);
++				 return 1;
++			}
++		}
+ 	} else if (os_strcmp(buf, "sae_require_mfp") == 0) {
+ 		bss->sae_require_mfp = atoi(pos);
+ 	} else if (os_strcmp(buf, "sae_confirm_immediate") == 0) {
+diff --git a/src/ap/ap_config.c b/src/ap/ap_config.c
+index 86b6e09..7d1f6a9 100644
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -124,6 +124,8 @@
+ 	bss->anti_clogging_threshold = 5;
+ 	bss->sae_sync = 5;
+ 
++	bss->force_anti_clogging = 0;
++
+ 	bss->gas_frag_limit = 1400;
+ 
+ #ifdef CONFIG_FILS
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 49cd316..c15bb58 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -658,6 +658,7 @@
+ 	struct wpabuf *vendor_elements;
+ 	struct wpabuf *assocresp_elements;
+ 
++	u8 force_anti_clogging;
+ 	unsigned int anti_clogging_threshold;
+ 	unsigned int sae_sync;
+ 	int sae_require_mfp;
+diff --git a/src/ap/beacon.c b/src/ap/beacon.c
+index 8cd1c41..9f94183 100644
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
+@@ -905,6 +905,7 @@
+ 	 * is less likely to see them (Probe Request frame sent on a
+ 	 * neighboring, but partially overlapping, channel).
+ 	 */
++#if 0 /*not needed this check as channel decided by driver for customized hostapd */
+ 	if (elems.ds_params &&
+ 	    hapd->iface->current_mode &&
+ 	    (hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G ||
+@@ -915,6 +916,7 @@
+ 			   hapd->iconf->channel, elems.ds_params[0]);
+ 		return;
+ 	}
++#endif
+ 
+ #ifdef CONFIG_P2P
+ 	if (hapd->p2p && hapd->p2p_group && elems.wps_ie) {
+@@ -1781,6 +1783,9 @@
+ 	struct wpa_driver_ap_params params;
+ 	struct hostapd_freq_params freq;
+ 	struct hostapd_iface *iface = hapd->iface;
++#ifdef	HOSTAPD_11R_SUPPORT
++	struct hostapd_bss_config *conf = hapd->conf;
++#endif
+ 	struct hostapd_config *iconf = iface->conf;
+ 	struct hostapd_hw_modes *cmode = iface->current_mode;
+ 	struct wpabuf *beacon, *proberesp, *assocresp;
+@@ -1853,6 +1858,14 @@
+ 				    &cmode->he_capab[IEEE80211_MODE_AP]) == 0)
+ 		params.freq = &freq;
+ 
++#ifdef	HOSTAPD_11R_SUPPORT
++	params.ft_params.reassociation_deadline = conf->reassociation_deadline;
++	params.ft_params.nas_id_len = os_strlen(conf->nas_identifier);
++	os_memcpy(params.ft_params.nas_identifier, conf->nas_identifier, os_strlen(conf->nas_identifier));
++	os_memcpy(params.ft_params.r1_key_holder, conf->r1_key_holder, ETH_ALEN);
++	os_memcpy(params.ft_params.own_mac, hapd->own_addr, ETH_ALEN);
++#endif /*HOSTAPD_11R_SUPPORT */
++
+ 	res = hostapd_drv_set_ap(hapd, &params);
+ 	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+ 	if (res)
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index 4b66b02..a4cc55a 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -1081,10 +1081,30 @@
+ int hostapd_select_hw_mode(struct hostapd_iface *iface)
+ {
+ 	int i;
++	struct hostapd_hw_modes *bMode = NULL;
++	struct hostapd_data *hapd = NULL;
+ 
+ 	if (iface->num_hw_features < 1)
+ 		return -1;
+ 
++	hapd = iface->bss[0];
++	if((!os_strncmp(hapd->conf->iface, "rai",3)) || (!os_strncmp(hapd->conf->iface, "wlani",5)) ||
++		(!os_strncmp(hapd->conf->iface, "rax",3)))
++	{
++		printf("interface name matched with rai or rax or wlani configure in A mode init freq:%d \n", iface->freq);
++		iface->conf->hw_mode = HOSTAPD_MODE_IEEE80211A;
++		iface->conf->channel = 36;
++		iface->freq = 5180;
++	}
++	else
++	{
++		printf("interface name not matched with rai or rax or wlani configure in G Mode\n");
++		iface->conf->hw_mode = HOSTAPD_MODE_IEEE80211G;
++		iface->conf->channel = 6;
++		iface->freq = 2437;
++	}
++
++
+ 	if ((iface->conf->hw_mode == HOSTAPD_MODE_IEEE80211G ||
+ 	     iface->conf->ieee80211n || iface->conf->ieee80211ac ||
+ 	     iface->conf->ieee80211ax) &&
+@@ -1101,6 +1121,8 @@
+ 		struct hostapd_hw_modes *mode = &iface->hw_features[i];
+ 		int chan;
+ 
++		if(mode->mode == HOSTAPD_MODE_IEEE80211B)
++			bMode = mode;
+ 		if (mode->mode == iface->conf->hw_mode) {
+ 			if (iface->freq > 0 &&
+ 			    !hw_mode_get_channel(mode, iface->freq, &chan))
+@@ -1110,6 +1132,11 @@
+ 			break;
+ 		}
+ 	}
++	if((iface->current_mode == NULL) && (bMode)) {
++		printf("HW supports B mode, so configuring for B mode \n");
++		iface->current_mode = bMode;
++		iface->conf->hw_mode = HOSTAPD_MODE_IEEE80211B;
++	}
+ 
+ 	if (iface->current_mode == NULL) {
+ 		if ((iface->drv_flags & WPA_DRIVER_FLAGS_ACS_OFFLOAD) &&
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index db41049..4f7dc4e 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -700,6 +700,9 @@
+ 	if (hapd->conf->anti_clogging_threshold == 0)
+ 		return 1;
+ 
++	if (hapd->conf->force_anti_clogging == 1)
++		return 1;
++
+ 	for (sta = hapd->sta_list; sta; sta = sta->next) {
+ #ifdef CONFIG_SAE
+ 		if (sta->sae &&
+@@ -711,6 +714,9 @@
+ 		if (sta->pasn && sta->pasn->ecdh)
+ 			open++;
+ #endif /* CONFIG_PASN */
++		if(open == hapd->conf->anti_clogging_threshold)
++			hapd->conf->force_anti_clogging = 1;
++
+ 		if (open >= hapd->conf->anti_clogging_threshold)
+ 			return 1;
+ 	}
+@@ -971,9 +977,13 @@
+ 	crypto_bignum_deinit(sta->sae->peer_commit_scalar_accepted, 0);
+ 	sta->sae->peer_commit_scalar_accepted = sta->sae->peer_commit_scalar;
+ 	sta->sae->peer_commit_scalar = NULL;
++#ifndef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	/*set PMKID in driver before sending Auth Confirm,else Assoc req rcv before pmkid is set  */
+ 	wpa_auth_pmksa_add_sae(hapd->wpa_auth, sta->addr,
+ 			       sta->sae->pmk, sta->sae->pmkid);
+ 	sae_sme_send_external_auth_status(hapd, sta, WLAN_STATUS_SUCCESS);
++
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ }
+ 
+ 
+@@ -1551,6 +1561,12 @@
+ 			}
+ 			sta->sae->rc = peer_send_confirm;
+ 		}
++		hapd->conf->force_anti_clogging = 0;
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++		/*set PMKID in driver before sending Auth Confirm,else Assoc_Req rcv before pmkid is set  */
++		wpa_auth_pmksa_add_sae(hapd->wpa_auth, sta->addr,
++			       sta->sae->pmk, sta->sae->pmkid);
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 		resp = sae_sm_step(hapd, sta, mgmt->bssid, auth_transaction,
+ 				   status_code, 0, &sta_removed);
+ 	} else {
+@@ -5690,19 +5706,23 @@
+ 	if (sta->flags & WLAN_STA_NONERP && !sta->nonerp_set) {
+ 		sta->nonerp_set = 1;
+ 		hapd->iface->num_sta_non_erp++;
++#ifndef	HOSTAPD_11R_SUPPORT
+ 		if (hapd->iface->num_sta_non_erp == 1)
+ 			ieee802_11_set_beacons(hapd->iface);
++#endif
+ 	}
+ 
+ 	if (!(sta->capability & WLAN_CAPABILITY_SHORT_SLOT_TIME) &&
+ 	    !sta->no_short_slot_time_set) {
+ 		sta->no_short_slot_time_set = 1;
+ 		hapd->iface->num_sta_no_short_slot_time++;
++#ifndef	HOSTAPD_11R_SUPPORT
+ 		if (hapd->iface->current_mode &&
+ 		    hapd->iface->current_mode->mode ==
+ 		    HOSTAPD_MODE_IEEE80211G &&
+ 		    hapd->iface->num_sta_no_short_slot_time == 1)
+ 			ieee802_11_set_beacons(hapd->iface);
++#endif
+ 	}
+ 
+ 	if (sta->capability & WLAN_CAPABILITY_SHORT_PREAMBLE)
+@@ -5714,10 +5734,12 @@
+ 	    !sta->no_short_preamble_set) {
+ 		sta->no_short_preamble_set = 1;
+ 		hapd->iface->num_sta_no_short_preamble++;
++#ifndef	HOSTAPD_11R_SUPPORT
+ 		if (hapd->iface->current_mode &&
+ 		    hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G
+ 		    && hapd->iface->num_sta_no_short_preamble == 1)
+ 			ieee802_11_set_beacons(hapd->iface);
++#endif
+ 	}
+ 
+ 	update_ht_state(hapd, sta);
+@@ -5779,9 +5801,11 @@
+ 	 *    issues with processing other non-Data Class 3 frames during this
+ 	 *    window.
+ 	 */
++#ifndef	HOSTAPD_11R_SUPPORT
+ 	if (resp == WLAN_STATUS_SUCCESS && sta &&
+ 	    add_associated_sta(hapd, sta, reassoc))
+ 		resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
++#endif
+ 
+ #ifdef CONFIG_FILS
+ 	if (sta && delay_assoc && resp == WLAN_STATUS_SUCCESS &&
+diff --git a/src/ap/ieee802_1x.c b/src/ap/ieee802_1x.c
+index 753c883..2ec26f3 100644
+--- a/src/ap/ieee802_1x.c
++++ b/src/ap/ieee802_1x.c
+@@ -1356,6 +1356,8 @@
+ 		sta->eapol_sm->be_auth_state = BE_AUTH_SUCCESS;
+ 		sta->eapol_sm->authSuccess = true;
+ 		sta->eapol_sm->authFail = false;
++		sta->eapol_sm->portValid = false;	//reset port for eapol, fix TGn 4.2.12
++		sta->eapol_sm->keyDone = false;		//reset port for eapol, fix TGn 4.2.12
+ 		if (sta->eapol_sm->eap)
+ 			eap_sm_notify_cached(sta->eapol_sm->eap);
+ 		pmksa_cache_to_eapol_data(hapd, pmksa, sta->eapol_sm);
+@@ -1700,7 +1702,9 @@
+ 		wpabuf_put_u8(sta->hs20_deauth_req, len - 3);
+ 		wpabuf_put_data(sta->hs20_deauth_req, pos + 3, len - 3);
+ 	}
++#ifndef CONFIG_MTK_PASSPOINT
+ 	ap_sta_session_timeout(hapd, sta, hapd->conf->hs20_deauth_req_timeout);
++#endif
+ }
+ 
+ 
+diff --git a/src/ap/pmksa_cache_auth.c b/src/ap/pmksa_cache_auth.c
+index b67b852..77a333e 100644
+--- a/src/ap/pmksa_cache_auth.c
++++ b/src/ap/pmksa_cache_auth.c
+@@ -16,7 +16,10 @@
+ #include "sta_info.h"
+ #include "ap_config.h"
+ #include "pmksa_cache_auth.h"
+-
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++#include "wpa_auth_i.h"
++#include "hostapd.h"
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 
+ static const int pmksa_cache_max_entries = 1024;
+ static const int dot11RSNAConfigPMKLifetime = 43200;
+@@ -53,6 +56,21 @@
+ {
+ 	struct rsn_pmksa_cache_entry *pos, *prev;
+ 	unsigned int hash;
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	struct wpa_authenticator *wpa_auth;
++	struct hostapd_data *hapd;
++	struct wpa_pmkid_entry pmkid_entry;
++
++	wpa_auth = (struct wpa_authenticator *)pmksa->ctx;
++	hapd = (struct hostapd_data *)wpa_auth->cb_ctx;
++
++	wpa_printf(MSG_ERROR, "remove PMKID in driver ");
++	pmkid_entry.AddRemove = 0;	/*remove entry*/
++	os_memcpy(pmkid_entry.sta, entry->spa, ETH_ALEN);
++	os_memcpy(pmkid_entry.bssid, wpa_auth->addr, ETH_ALEN);
++	os_memcpy(pmkid_entry.pmkid, entry->pmkid, PMKID_LEN);
++	hapd->driver->update_sta_pmkid(hapd->drv_priv, &pmkid_entry);
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 
+ 	pmksa->pmksa_count--;
+ 	pmksa->free_cb(entry, pmksa->ctx);
+@@ -283,7 +301,11 @@
+ 		     struct eapol_state_machine *eapol, int akmp)
+ {
+ 	struct rsn_pmksa_cache_entry *entry;
+-
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	struct wpa_authenticator *wpa_auth;
++	struct hostapd_data *hapd;
++	struct wpa_pmkid_entry pmkid_entry;
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 	entry = pmksa_cache_auth_create_entry(pmk, pmk_len, pmkid, kck, kck_len,
+ 					      aa, spa, session_timeout, eapol,
+ 					      akmp);
+@@ -291,6 +313,18 @@
+ 	if (pmksa_cache_auth_add_entry(pmksa, entry) < 0)
+ 		return NULL;
+ 
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	wpa_printf(MSG_DEBUG, "add PMKID in driver ");
++	pmkid_entry.AddRemove = 1;		/*Add PMKID in driver entry*/
++	os_memcpy(pmkid_entry.sta, spa, ETH_ALEN);
++	os_memcpy(pmkid_entry.bssid, aa, ETH_ALEN);
++	if (pmkid) {
++		os_memcpy(pmkid_entry.pmkid, pmkid, PMKID_LEN);
++	}
++	wpa_auth = (struct wpa_authenticator *)(pmksa->ctx);
++	hapd = (struct hostapd_data *)(wpa_auth->cb_ctx);
++	hapd->driver->update_sta_pmkid(hapd->drv_priv, &pmkid_entry);
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 	return entry;
+ }
+ 
+diff --git a/src/ap/sta_info.c b/src/ap/sta_info.c
+index ccd1ed9..82c7fff 100644
+--- a/src/ap/sta_info.c
++++ b/src/ap/sta_info.c
+@@ -1120,8 +1120,11 @@
+ 		       HOSTAPD_LEVEL_DEBUG, "binding station to interface "
+ 		       "'%s'", iface);
+ 
++	printf("Ignoring vlan virtual interface for wpa \n");
++#if 0 /*not defined DYNAMIC_VLAN_SUPPORT */
+ 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
+ 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
++#endif
+ 
+ 	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
+ 	if (ret < 0) {
+diff --git a/src/ap/vlan_init.c b/src/ap/vlan_init.c
+index 53eacfb..42e4e28 100644
+--- a/src/ap/vlan_init.c
++++ b/src/ap/vlan_init.c
+@@ -223,12 +223,15 @@
+ 	n->next = hapd->conf->vlan;
+ 	hapd->conf->vlan = n;
+ 
++	printf("ignoring virtual vlan interface addition \n");
++#if 0 /* not defined DYNAMIC_VLAN_SUPPORT */
+ 	/* hapd->conf->vlan needs this new VLAN here for WPA setup */
+ 	if (vlan_if_add(hapd, n, 0)) {
+ 		hapd->conf->vlan = n->next;
+ 		os_free(n);
+ 		n = NULL;
+ 	}
++#endif
+ 
+ 	return n;
+ }
+@@ -256,12 +259,15 @@
+ 	if (vlan == NULL)
+ 		return 1;
+ 
++	printf("ignoring virtual vlan interface removal \n");
++#if 0 /*not defined DYNAMIC_VLAN_SUPPORT */
+ 	if (vlan->dynamic_vlan == 0) {
+ 		vlan_if_remove(hapd, vlan);
+ #ifdef CONFIG_FULL_DYNAMIC_VLAN
+ 		vlan_dellink(vlan->ifname, hapd);
+ #endif /* CONFIG_FULL_DYNAMIC_VLAN */
+ 	}
++#endif
+ 
+ 	return 0;
+ }
+diff --git a/src/ap/wpa_auth.c b/src/ap/wpa_auth.c
+index 6d60f26..db5a9b0 100644
+--- a/src/ap/wpa_auth.c
++++ b/src/ap/wpa_auth.c
+@@ -1244,6 +1244,8 @@
+ 			return;
+ 		}
+ 		random_add_randomness(key->key_nonce, WPA_NONCE_LEN);
++		printf("AVOID reject 4way hs for entropy \n");
++#if 0
+ 		if (sm->group->reject_4way_hs_for_entropy) {
+ 			/*
+ 			 * The system did not have enough entropy to generate
+@@ -1261,6 +1263,7 @@
+ 					   WLAN_REASON_PREV_AUTH_NOT_VALID);
+ 			return;
+ 		}
++#endif
+ 		break;
+ 	case PAIRWISE_4:
+ 		if (sm->wpa_ptk_state != WPA_PTK_PTKINITNEGOTIATING ||
+diff --git a/src/ap/wpa_auth_ft.c b/src/ap/wpa_auth_ft.c
+index fef1104..c49a551 100644
+--- a/src/ap/wpa_auth_ft.c
++++ b/src/ap/wpa_auth_ft.c
+@@ -98,6 +98,11 @@
+ 	if (enc_len < AES_BLOCK_SIZE)
+ 		goto err;
+ 
++#ifdef HOSTAPD_11R_SUPPORT
++	if (enc_len == AES_BLOCK_SIZE)
++		goto no_plain_text;
++#endif
++
+ 	*plain = os_zalloc(enc_len - AES_BLOCK_SIZE);
+ 	if (!*plain)
+ 		goto err;
+@@ -115,7 +120,9 @@
+ 				    *plain) < 0)
+ 			goto err;
+ 	}
+-
++#ifdef HOSTAPD_11R_SUPPORT
++no_plain_text:
++#endif
+ 	*plain_size = enc_len - AES_BLOCK_SIZE;
+ 	wpa_hexdump_key(MSG_DEBUG, "FT(RRB): decrypted TLVs",
+ 			*plain, *plain_size);
+@@ -442,6 +449,15 @@
+ 	tlv_len += wpa_ft_tlv_len(tlvs2);
+ 	tlv_len += wpa_ft_vlan_len(vlan);
+ 
++#ifdef HOSTAPD_11R_SUPPORT
++	if (tlv_len == 0) {
++		wpa_printf(MSG_DEBUG, "FT: Plaintext(size 0) generated");
++		*plain = NULL;
++		*plain_len = 0;
++		return 0;
++	}
++#endif
++
+ 	*plain_len = tlv_len;
+ 	*plain = os_zalloc(tlv_len);
+ 	if (!*plain) {
+@@ -3212,7 +3228,9 @@
+ 	sm->pairwise = pairwise;
+ 	sm->PTK_valid = true;
+ 	sm->tk_already_set = false;
++#ifndef	HOSTAPD_11R_SUPPORT
+ 	wpa_ft_install_ptk(sm, 0);
++#endif
+ 
+ 	if (wpa_ft_set_vlan(sm->wpa_auth, sm->addr, &vlan) < 0) {
+ 		wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
+diff --git a/src/ap/wpa_auth_i.h b/src/ap/wpa_auth_i.h
+index a6dc1a5..304fcc0 100644
+--- a/src/ap/wpa_auth_i.h
++++ b/src/ap/wpa_auth_i.h
+@@ -10,6 +10,10 @@
+ #define WPA_AUTH_I_H
+ 
+ #include "utils/list.h"
++#include "pmksa_cache_auth.h"
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++#include "wpa_auth.h"
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 
+ /* max(dot11RSNAConfigGroupUpdateCount,dot11RSNAConfigPairwiseUpdateCount) */
+ #define RSNA_MAX_EAPOL_RETRIES 4
+diff --git a/src/ap/wpa_auth_ie.c b/src/ap/wpa_auth_ie.c
+index 524922e..9406c8b 100644
+--- a/src/ap/wpa_auth_ie.c
++++ b/src/ap/wpa_auth_ie.c
+@@ -184,11 +184,29 @@
+ #endif /* CONFIG_RSN_TESTING */
+ 
+ 	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X) {
++#ifdef CONFIG_IEEE80211W
++			if (conf->ieee80211w == MGMT_FRAME_PROTECTION_REQUIRED)
++			{
++				printf("11w set setting key mgmt 1X SHA256 \n");
++				RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SHA256);
++			}
++			else
++#endif CONFIG_IEEE80211W
++
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_UNSPEC_802_1X);
+ 		pos += RSN_SELECTOR_LEN;
+ 		num_suites++;
+ 	}
+ 	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_PSK) {
++#ifdef CONFIG_IEEE80211W
++					if (conf->ieee80211w == MGMT_FRAME_PROTECTION_REQUIRED)
++					{
++						printf("11w set setting key mgmt PSK SHA256 \n");
++						RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_PSK_SHA256);
++					}
++					else
++#endif CONFIG_IEEE80211W
++
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X);
+ 		pos += RSN_SELECTOR_LEN;
+ 		num_suites++;
+@@ -224,6 +242,13 @@
+ 	}
+ #ifdef CONFIG_SAE
+ 	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_SAE) {
++#if 1  /*WPA3 Support */
++		if(conf->rsn_pairwise & WPA_CIPHER_TKIP)
++		{
++			printf("TKIP cipher not allowed in SAE \n");
++			return -1;
++		}
++#endif
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_SAE);
+ 		pos += RSN_SELECTOR_LEN;
+ 		num_suites++;
+@@ -240,6 +265,60 @@
+ 		num_suites++;
+ 	}
+ 	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192) {
++		if(conf->rsn_pairwise != WPA_CIPHER_GCMP_256)
++		{
++			printf("GCMP 256 cipher is only allowed for suiteB 192 \n");
++			return -1;
++		}
++		if(conf->wpa_key_mgmt != WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
++		{
++			printf("SUITEB 192 is not allowed with other key mgmt \n");
++			return -1;
++		}
++		if(conf->ieee80211w != MGMT_FRAME_PROTECTION_REQUIRED)
++		{
++			printf("PMF Required should be set for SuiteB 192 \n");
++			return -1;
++		}
++		if(conf->group_mgmt_cipher != WPA_CIPHER_BIP_GMAC_256)
++		{
++			printf("Group Mgmt Cipher should be BIP GMAC 256 for SuiteB 192 \n");
++			return -1;
++		}
++		#if 0
++		if(conf->rsn_pairwise & WPA_CIPHER_TKIP)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		else if(conf->rsn_pairwise & WPA_CIPHER_CCMP_256)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		else if(conf->rsn_pairwise & WPA_CIPHER_CCMP)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		else if(conf->rsn_pairwise & WPA_CIPHER_GCMP)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		if(conf->wpa_key_mgmt & WPA_KEY_MGMT_PSK)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		if(conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X)
++		{
++			printf("TKIP cipher not allowed in SUITEB 192 \n");
++			return -1;
++		}
++		#endif
++
++
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192);
+ 		pos += RSN_SELECTOR_LEN;
+ 		num_suites++;
+@@ -270,6 +349,13 @@
+ #endif /* CONFIG_FILS */
+ #ifdef CONFIG_OWE
+ 	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_OWE) {
++#if 1  /*WPA3 Support */
++		if(conf->rsn_pairwise & WPA_CIPHER_TKIP)
++		{
++			printf("TKIP cipher not allowed in OWE \n");
++			return -1;
++		}
++#endif
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_OWE);
+ 		pos += RSN_SELECTOR_LEN;
+ 		num_suites++;
+diff --git a/src/common/sae.c b/src/common/sae.c
+index c0f154e..dcf2716 100644
+--- a/src/common/sae.c
++++ b/src/common/sae.c
+@@ -21,6 +21,23 @@
+ #include "sae.h"
+ 
+ 
++/*SAE Cert: 4.3*/
++static int sae_suitable_group(int group)
++{
++#ifdef CONFIG_TESTING_OPTIONS
++	/* Allow all groups for testing purposes in non-production builds. */
++	return 1;
++#else /* CONFIG_TESTING_OPTIONS */
++	/* Enforce REVmd rules on which SAE groups are suitable for production
++	 * purposes: FFC groups whose prime is >= 3072 bits and ECC groups
++	 * defined over a prime field whose prime is >= 256 bits. Furthermore,
++	 * ECC groups defined over a characteristic 2 finite field and ECC
++	 * groups with a co-factor greater than 1 are not suitable. */
++	return group == 19 || group == 20 || group == 21 ||
++		group == 15 || group == 16 || group == 17 || group == 18;
++#endif /* CONFIG_TESTING_OPTIONS */
++}
++
+ int sae_set_group(struct sae_data *sae, int group)
+ {
+ 	struct sae_temporary_data *tmp;
+@@ -28,6 +45,12 @@
+ #ifdef CONFIG_TESTING_OPTIONS
+ 	/* Allow all groups for testing purposes in non-production builds. */
+ #else /* CONFIG_TESTING_OPTIONS */
++	/*SAE Cert 4.3*/
++	if (!sae_suitable_group(group)) {
++		wpa_printf(MSG_DEBUG, "SAE: Reject unsuitable group %d", group);
++		return -1;
++	}
++
+ 	if (!dragonfly_suitable_group(group, 0)) {
+ 		wpa_printf(MSG_DEBUG, "SAE: Reject unsuitable group %d", group);
+ 		return -1;
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index d3312a3..7e12feb 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -1226,6 +1226,26 @@
+ 	u8 rfkill_release;
+ };
+ 
++#ifdef HOSTAPD_11R_SUPPORT
++/*11r params fill in driver*/
++struct ap_11r_params{
++	u8 nas_identifier[64];
++	int nas_id_len;
++	u8 r1_key_holder[ETH_ALEN];
++	u8 own_mac[ETH_ALEN];
++	u32 reassociation_deadline;
++};
++#endif /*HOSTAPD_11R_SUPPORT*/
++
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++struct wpa_pmkid_entry {
++	u8 bssid[ETH_ALEN];
++	u8 sta[ETH_ALEN];
++	u8 pmkid[PMKID_LEN];
++	u8 AddRemove;	/*1- ADD, 0- Remove*/
++};
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
++
+ struct wpa_driver_ap_params {
+ 	/**
+ 	 * head - Beacon head from IEEE 802.11 header to IEs before TIM IE
+@@ -1450,6 +1470,10 @@
+ 	 */
+ 	int pbss;
+ 
++#ifdef HOSTAPD_11R_SUPPORT
++	/*11r params for driver*/
++	struct ap_11r_params ft_params;
++#endif /*HOSTAPD_11R_SUPPORT*/
+ 	/**
+ 	 * multicast_to_unicast - Whether to use multicast_to_unicast
+ 	 *
+@@ -2742,6 +2766,23 @@
+ 	 */
+ 	int (*flush_pmkid)(void *priv);
+ 
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	/**
++	 * update_sta_pmkid - update station PMKID to the chip driver via cfg80211
++	 * @priv: private driver interface data
++	 * @params: PMKID parameters
++	 *
++	 * Returns: 0 on success, -1 on failure
++	 *
++	 * This function is called when a PMK (for any connecting/leaving station),
++	 * is added/removed in AP, as a result of either normal authentication or
++	 * RSN pre-authentication. The PMKSA parameters are a set of
++	 * bssid, pmkid, and station mac address.
++	 *
++	 */
++	int (*update_sta_pmkid)(void *priv, struct wpa_pmkid_entry *params);
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
++
+ 	/**
+ 	 * get_capa - Get driver capabilities
+ 	 * @priv: private driver interface data
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index aec179a..1cb5686 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -43,6 +43,16 @@
+ #ifndef NETLINK_CAP_ACK
+ #define NETLINK_CAP_ACK 10
+ #endif /* NETLINK_CAP_ACK */
++
++/*for Mediatek Dynamic VLAN Support*/
++#include "linux_wext.h"
++
++struct sta_vlan_param
++{
++	u8 sta_addr[6];
++	int vlan_id;
++
++};
+ /* support for extack if compilation headers are too old */
+ #ifndef NETLINK_EXT_ACK
+ #define NETLINK_EXT_ACK 11
+@@ -4462,6 +4472,9 @@
+ 		return 0; /* special test mode */
+ 	else
+ 		return -1;
++	wpa_printf(MSG_DEBUG, "nl802111: sae_pwe after=%d attr sae_pwe_number=%d",
++						pwe, NL80211_ATTR_SAE_PWE);
++
+ 	if (nla_put_u8(msg, NL80211_ATTR_SAE_PWE, sae_pwe))
+ 		return -1;
+ 
+@@ -4551,6 +4564,37 @@
+ 
+ 	beacon_set = params->reenable ? 0 : bss->beacon_set;
+ 
++#ifdef HOSTAPD_11R_SUPPORT
++	{
++		int skfd, status = 0;
++		struct iwreq iwr;
++		struct ap_11r_params* ft_params;
++
++#define RTPRIV_IOCTL_SET_FT_PARAM  (0x8BE0 + 0x18)
++
++		/* Create a channel to the NET kernel. */
++		if((skfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
++		{
++			perror("socket");
++			return(-1);
++		}
++		os_memset(&iwr, 0, sizeof(iwr));
++		os_strlcpy(iwr.ifr_name, bss->ifname, IFNAMSIZ);
++		printf("interface name:%s\n", bss->ifname);
++		iwr.u.data.flags = 0;
++		iwr.u.data.length = 0;
++
++		iwr.u.data.pointer = (caddr_t)(&(params->ft_params));
++		iwr.u.data.length = sizeof(struct ap_11r_params);
++		status = ioctl(skfd, RTPRIV_IOCTL_SET_FT_PARAM, &iwr);
++
++		if( status < 0) {
++			printf("error in ioctl call for FT param set: status:%d\n", status);
++			return -1;
++		}
++	}
++#endif
++
+ 	wpa_printf(MSG_DEBUG, "nl80211: Set beacon (beacon_set=%d)",
+ 		   beacon_set);
+ 	if (beacon_set)
+@@ -7272,6 +7316,45 @@
+ static int i802_set_sta_vlan(struct i802_bss *bss, const u8 *addr,
+ 			     const char *ifname, int vlan_id)
+ {
++#if 0 /*Mediatke Dynamic Vlan Support */
++	int skfd;
++	struct iwreq iwr;
++	struct sta_vlan_param* vlan_param;
++	char *pos;
++
++#define RTPRIV_IOCTL_STA_VLAN  (0x8BE0 + 0x1E)
++
++	 pos = os_strchr(ifname,'.');
++	 if(pos != NULL)
++		*pos = '\0';
++
++	  printf("Setting vlan id %d for interface %s \n",vlan_id, ifname);
++
++	 /* Create a channel to the NET kernel. */
++	 if((skfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
++	 {
++		perror("socket");
++		return(-1);
++	 }
++	 os_memset(&iwr, 0, sizeof(iwr));
++	os_strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
++	iwr.u.data.flags = 0;
++	iwr.u.data.length = 0;
++
++	vlan_param = (struct sta_vlan_param*)os_zalloc(sizeof(struct sta_vlan_param));
++	memcpy(vlan_param->sta_addr,addr,6);
++	vlan_param->vlan_id = vlan_id;
++
++	iwr.u.data.pointer = (caddr_t)vlan_param;
++	iwr.u.data.length = sizeof(struct sta_vlan_param);
++
++	if(ioctl(skfd, RTPRIV_IOCTL_STA_VLAN, &iwr) < 0) {
++			printf("Error in ioctl call for setting VLAN");
++			return -1;
++	}
++	os_free(vlan_param);
++	return 0;
++#else
+ 	struct wpa_driver_nl80211_data *drv = bss->drv;
+ 	struct nl_msg *msg;
+ 	int ret;
+@@ -7297,6 +7380,7 @@
+ 			   strerror(-ret));
+ 	}
+ 	return ret;
++#endif
+ }
+ 
+ 
+@@ -8402,7 +8486,43 @@
+ 				   (WLAN_FC_STYPE_PROBE_REQ << 4),
+ 				   NULL, 0, false) < 0)
+ 		goto out_err;
++#if  1 /*def HOSTAPD_11R_SUPPORT */
++	/*Register AUTH and REASSOC frame*/
++	/*Auth frame already registered  */
++#if 0
++	if (nl80211_register_frame(bss, bss->nl_preq,
++				   (WLAN_FC_TYPE_MGMT << 2) |
++				   (WLAN_FC_STYPE_AUTH << 4),
++				   NULL, 0, false) < 0)
++		nl_destroy_handles(&bss->nl_mgmt);
++	else
++		wpa_printf(MSG_DEBUG, "nl80211: Enable AUTH Handle "
++		   "reporting nl_mgmt=%p", bss->nl_mgmt);
++
+ 
++#endif
++	if (nl80211_register_frame(bss, bss->nl_preq,
++				   (WLAN_FC_TYPE_MGMT << 2) |
++				   (WLAN_FC_STYPE_REASSOC_REQ << 4),
++				   NULL, 0, false) < 0)
++		nl_destroy_handles(&bss->nl_mgmt);
++	else
++		wpa_printf(MSG_DEBUG, "nl80211: Enable REASSOC REQ Handle "
++		   "reporting nl_mgmt=%p", bss->nl_mgmt);
++#endif
++#if 1
++	/*For SAE auth to register for other flags */
++	if (nl80211_register_frame(bss, bss->nl_preq,
++				   (WLAN_FC_TYPE_MGMT << 2) |
++				   (WLAN_FC_STYPE_ASSOC_REQ << 4),
++				   NULL, 0, false) < 0)
++		nl_destroy_handles(&bss->nl_mgmt);
++	else
++		wpa_printf(MSG_DEBUG, "nl80211: Enable ASSOC REQ Handle "
++		   "reporting nl_mgmt=%p", bss->nl_mgmt);
++
++
++#endif
+ 	nl80211_register_eloop_read(&bss->nl_preq,
+ 				    wpa_driver_nl80211_event_receive,
+ 				    bss->nl_cb, 0);
+@@ -12023,6 +12143,49 @@
+ 	return ret;
+ }
+ 
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++
++static int wpa_driver_nl80211_update_sta_pmkid(void *priv,
++					     struct wpa_pmkid_entry *params)
++{
++	struct i802_bss *bss = priv;
++	struct wpa_driver_nl80211_data *drv = bss->drv;
++	struct nl_msg *msg = NULL;
++	int ret = -1;
++	int ParamSize= sizeof(struct wpa_pmkid_entry);
++
++	wpa_printf(MSG_DEBUG,
++			   "nl80211: call testmode command");
++	wpa_printf(MSG_ERROR, "bssid:" MACSTR "sta:" MACSTR
++				"PMKID Add-Remove:%d ParamSize:%d",
++				MAC2STR(params->bssid), MAC2STR(params->sta),
++				params->AddRemove, ParamSize);
++
++	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_TESTMODE);
++
++	if (!msg ||
++		nla_put(msg, NL80211_ATTR_TESTDATA, ParamSize,
++					params)) {
++			wpa_printf(MSG_ERROR,
++			   "nl80211: failed testmode command");
++		goto fail;
++	}
++	ret = send_and_recv_msgs(drv, msg, NULL, NULL, NULL, NULL);
++	wpa_printf(MSG_DEBUG,
++			   "nl80211: testmode command ret:%d", ret);
++
++	msg = NULL;
++	if (ret) {
++		wpa_printf(MSG_ERROR,
++			   "nl80211: add_sta_pmkid failed: ret=%d (%s)",
++			   ret, strerror(-ret));
++		goto fail;
++	}
++fail:
++	nlmsg_free(msg);
++	return ret;
++}
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 
+ static int nl80211_set_4addr_mode(void *priv, const char *bridge_ifname,
+ 				  int val)
+@@ -12245,6 +12408,9 @@
+ 	.get_ext_capab = nl80211_get_ext_capab,
+ 	.update_connect_params = nl80211_update_connection_params,
+ 	.send_external_auth_status = nl80211_send_external_auth_status,
++#ifdef HOSTAPD_PMKID_IN_DRIVER_SUPPORT
++	.update_sta_pmkid = wpa_driver_nl80211_update_sta_pmkid,
++#endif /*HOSTAPD_PMKID_IN_DRIVER_SUPPORT*/
+ 	.set_4addr_mode = nl80211_set_4addr_mode,
+ #ifdef CONFIG_DPP
+ 	.dpp_listen = nl80211_dpp_listen,
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index 83868b7..818672d 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -2486,6 +2486,7 @@
+ 	if (send_and_recv_msgs(drv, msg, phy_info_handler, &result,
+ 			       NULL, NULL) == 0) {
+ 		struct hostapd_hw_modes *modes;
++#if 0
+ 
+ 		nl80211_set_regulatory_flags(drv, &result);
+ 		if (result.failed) {
+@@ -2501,6 +2502,7 @@
+ 		}
+ 
+ 		*dfs_domain = result.dfs_domain;
++#endif
+ 
+ 		modes = wpa_driver_nl80211_postprocess_modes(result.modes,
+ 							     num_modes);
+diff --git a/src/drivers/linux_wext.h b/src/drivers/linux_wext.h
+index e7c7001..a164451 100644
+--- a/src/drivers/linux_wext.h
++++ b/src/drivers/linux_wext.h
+@@ -31,7 +31,7 @@
+ #endif /* __user */
+ 
+ #endif /* ANDROID */
+-
++#include <asm-generic/int-ll64.h>
+ #include <linux/wireless.h>
+ 
+ #ifndef IW_ENCODE_ALG_PMK
+diff --git a/src/rsn_supp/wpa_ie.c b/src/rsn_supp/wpa_ie.c
+index 3ba722f..ca82a49 100644
+--- a/src/rsn_supp/wpa_ie.c
++++ b/src/rsn_supp/wpa_ie.c
+@@ -169,8 +169,18 @@
+ 	*pos++ = 1;
+ 	*pos++ = 0;
+ 	if (key_mgmt == WPA_KEY_MGMT_IEEE8021X) {
++#ifdef CONFIG_IEEE80211W
++	if (sm->mfp == 2)
++		RSN_SELECTOR_PUT(pos, WPA_KEY_MGMT_IEEE8021X_SHA256);
++	else
++#endif CONFIG_IEEE80211W
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_UNSPEC_802_1X);
+ 	} else if (key_mgmt == WPA_KEY_MGMT_PSK) {
++#ifdef CONFIG_IEEE80211W
++	if (sm->mfp == 2)
++		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_PSK_SHA256);
++	else
++#endif CONFIG_IEEE80211W
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_PSK_OVER_802_1X);
+ 	} else if (key_mgmt == WPA_KEY_MGMT_CCKM) {
+ 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_CCKM);

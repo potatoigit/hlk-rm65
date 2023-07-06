@@ -1,0 +1,397 @@
+From b30863bf93f6364a0fce742b82a24b58eada8f34 Mon Sep 17 00:00:00 2001
+From: Archana Adhikari <archana.adhikari@mediatek.com>
+Date: Mon, 09 May 2022 19:45:20 +0800
+Subject: [PATCH] wpa_supplicant_v2.10 support
+
+[Description] Added customized code on base code of wpa_supplicant_v2.10
+
+Signed-off-by: Archana Adhikari <archana.adhikari@mediatek.com>
+CR-Id: WCNCR00261976
+---
+
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index d3312a3..650052d 100755
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -962,6 +962,10 @@
+ 	 */
+ 	unsigned int key_mgmt_suite;
+ 
++#ifdef MTK_WPA3_SUPPORT
++	int sae_group;
++#endif
++
+ 	/**
+ 	 * auth_alg - Allowed authentication algorithms
+ 	 * Bit field of WPA_AUTH_ALG_*
+@@ -5121,6 +5125,17 @@
+ 	  */
+ 	EVENT_UPDATE_DH,
+ 
++#ifdef MTK_WPA3_SUPPORT
++	/**
++	 * EVENT_NOTIFY_PMK - Notification of pmk
++	 */
++	 EVENT_NOTIFY_PMK,
++
++	/**
++	* EVENT_NOTIFY_PMKSA - Notification of pmksa
++	 */
++	 EVENT_NOTIFY_PMKSA,
++#endif
+ 	/**
+ 	 * EVENT_UNPROT_BEACON - Unprotected Beacon frame received
+ 	 *
+@@ -6015,6 +6030,26 @@
+ 		size_t ie_len;
+ 	} update_dh;
+ 
++#ifdef MTK_WPA3_SUPPORT
++	/**
++	 * struct pmk_info - Data for EVENT_PMK
++	 */
++	struct pmk_info {
++		/** pmk */
++		u8 pmk[64];
++		/** length of pmk */
++		int pmk_len;
++
++	} pmk_info;
++
++	struct pmksa_info {
++		u8 pmkid[16];
++		u8 pmk[64];
++		u32 pmk_len;
++		u32 akmp;
++		u8 aa[ETH_ALEN];
++	} pmksa_info;
++#endif
+ 	/**
+ 	 * struct unprot_beacon - Data for EVENT_UNPROT_BEACON
+ 	 */
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index aec179a..bc3b995 100755
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -39,6 +39,14 @@
+ #include "rfkill.h"
+ #include "driver_nl80211.h"
+ 
++#ifdef MTK_WPA3_SUPPORT
++struct connect_param {
++	u32 key_mgmt;
++	u8 psk[64];
++	u32 psk_len;
++	int sae_group;
++};
++#endif
+ 
+ #ifndef NETLINK_CAP_ACK
+ #define NETLINK_CAP_ACK 10
+@@ -3184,6 +3192,32 @@
+ 	return num_suites;
+ }
+ 
++#ifdef MTK_WPA3_SUPPORT
++#define OUI_MTK 0x000c43
++static int issue_set_conn_param(struct wpa_driver_nl80211_data *drv,
++				  struct connect_param *conn_param, size_t param_len)
++{
++	struct nl_msg *msg;
++	int ret;
++
++	if (!(msg = nl80211_drv_msg(drv, 0, NL80211_CMD_VENDOR)) ||
++	    nla_put_u32(msg, NL80211_ATTR_VENDOR_ID, OUI_MTK) ||
++	    nla_put_u32(msg, NL80211_ATTR_VENDOR_SUBCMD,
++						0) ||
++	    nla_put(msg, NL80211_ATTR_VENDOR_DATA, param_len, conn_param)) {
++		nl80211_nlmsg_clear(msg);
++		nlmsg_free(msg);
++		return -1;
++	}
++	ret = send_and_recv_msgs(drv, msg, NULL, NULL, NULL, NULL);
++	if (ret) {
++		wpa_printf(MSG_DEBUG,
++			   "nl80211: set conn_param failed: ret=%d (%s)",
++			   ret, strerror(-ret));
++	}
++	return ret;
++}
++#endif
+ 
+ #ifdef CONFIG_DRIVER_NL80211_QCA
+ static int issue_key_mgmt_set_key(struct wpa_driver_nl80211_data *drv,
+@@ -6383,6 +6417,20 @@
+ 	}
+ #endif /* CONFIG_DRIVER_NL80211_QCA */
+ 
++
++#ifdef MTK_WPA3_SUPPORT
++	if (params->key_mgmt_suite == WPA_KEY_MGMT_SAE)
++	{
++		struct connect_param conn_param;
++		conn_param.key_mgmt = params->key_mgmt_suite;
++		conn_param.psk_len = os_strlen(params->passphrase);
++		os_memcpy(conn_param.psk,params->passphrase,conn_param.psk_len);
++		conn_param.sae_group = params->sae_group;
++		issue_set_conn_param(drv, &conn_param,sizeof(struct connect_param));
++		//nl_connect = 0;
++	}
++#endif
++
+ 	wpa_printf(MSG_DEBUG, "nl80211: Connect (ifindex=%d)", drv->ifindex);
+ 	msg = nl80211_drv_msg(drv, 0, NL80211_CMD_CONNECT);
+ 	if (!msg)
+diff --git a/src/drivers/driver_nl80211_event.c b/src/drivers/driver_nl80211_event.c
+index 0f0a01d..5971d44 100755
+--- a/src/drivers/driver_nl80211_event.c
++++ b/src/drivers/driver_nl80211_event.c
+@@ -2411,6 +2411,32 @@
+ 	}
+ }
+ 
++#ifdef MTK_WPA3_SUPPORT
++#define OUI_MTK 0x000c43
++
++static void nl80211_vendor_event_mtk(struct wpa_driver_nl80211_data *drv,
++				     u32 subcmd, u8 *data, size_t len)
++{
++	int i=0;
++	union wpa_event_data event_data;
++	os_memset(&event_data, 0, sizeof(event_data));
++
++	switch (subcmd) {
++		case 0:
++			os_memcpy(event_data.pmk_info.pmk,data+4,len-4);
++			event_data.pmk_info.pmk_len = len-4;
++			wpa_supplicant_event(drv->ctx, EVENT_NOTIFY_PMK, &event_data);
++			break;
++		case 1:
++			os_memcpy(&event_data.pmksa_info,data+4,len-4);
++			wpa_supplicant_event(drv->ctx, EVENT_NOTIFY_PMKSA, &event_data);
++		default:
++			printf("wrong mtk event \n");
++			break;
++	}
++
++}
++#endif
+ 
+ #ifdef CONFIG_DRIVER_NL80211_BRCM
+ 
+@@ -2537,6 +2563,13 @@
+ 	case OUI_QCA:
+ 		nl80211_vendor_event_qca(drv, subcmd, data, len);
+ 		break;
++
++#ifdef MTK_WPA3_SUPPORT
++	case OUI_MTK:
++		nl80211_vendor_event_mtk(drv, subcmd, data, len);
++		break;
++#endif
++
+ #ifdef CONFIG_DRIVER_NL80211_BRCM
+ 	case OUI_BRCM:
+ 		nl80211_vendor_event_brcm(drv, subcmd, data, len);
+diff --git a/src/drivers/driver_nl80211_scan.c b/src/drivers/driver_nl80211_scan.c
+index 1316084..3a4dc71 100755
+--- a/src/drivers/driver_nl80211_scan.c
++++ b/src/drivers/driver_nl80211_scan.c
+@@ -194,6 +194,9 @@
+ 		ssids = nla_nest_start(msg, NL80211_ATTR_SCAN_SSIDS);
+ 		if (ssids == NULL)
+ 			goto fail;
++#ifdef MTK_WPA3_SUPPORT
++		params->num_ssids = 1;
++#endif
+ 		for (i = 0; i < params->num_ssids; i++) {
+ 			wpa_printf(MSG_MSGDUMP, "nl80211: Scan SSID %s",
+ 				   wpa_ssid_txt(params->ssids[i].ssid,
+diff --git a/src/rsn_supp/wpa.c b/src/rsn_supp/wpa.c
+index 0a2f877..bcdfdb6 100755
+--- a/src/rsn_supp/wpa.c
++++ b/src/rsn_supp/wpa.c
+@@ -1620,6 +1620,7 @@
+ 	size_t mic_len, hdrlen, rlen;
+ 	struct wpa_eapol_key *reply;
+ 	u8 *rbuf, *key_mic;
++	int ret;
+ 
+ 	mic_len = wpa_mic_len(sm->key_mgmt, sm->pmk_len);
+ 	hdrlen = sizeof(*reply) + mic_len + 2;
+@@ -1649,8 +1650,17 @@
+ 	WPA_PUT_BE16(key_mic + mic_len, 0);
+ 
+ 	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: Sending EAPOL-Key 4/4");
+-	return wpa_eapol_key_send(sm, ptk, ver, dst, ETH_P_EAPOL, rbuf, rlen,
++	ret = wpa_eapol_key_send(sm, ptk, ver, dst, ETH_P_EAPOL, rbuf, rlen,
+ 				  key_mic);
++#ifdef CONFIG_CUSTOMIZED_SUPPLICANT
++	if(sm->proto == WPA_PROTO_RSN) {
++		char cmd[100];
++		printf("Adding interface %s for security in bridge \n", sm->ifname);
++		os_snprintf(cmd, sizeof(cmd), "brctl addif br-lan %s", sm->ifname);
++		system(cmd);
++	}
++#endif
++        return ret;
+ }
+ 
+ 
+@@ -2010,6 +2020,15 @@
+ 	}
+ 	gd->tx = wpa_supplicant_gtk_tx_bit_workaround(
+ 		sm, !!(key_info & WPA_KEY_INFO_TXRX));
++
++#ifdef CONFIG_CUSTOMIZED_SUPPLICANT
++	if(sm->proto == WPA_PROTO_WPA) {
++		char cmd[100];
++		printf("Adding interface %s for security in bridge \n", sm->ifname);
++		os_snprintf(cmd, sizeof(cmd), "brctl addif br-lan %s", sm->ifname);
++		system(cmd);
++	}
++#endif
+ 	return 0;
+ }
+ 
+@@ -3884,6 +3903,13 @@
+ 	os_memcpy(sm->rx_replay_counter, replay_ctr, WPA_REPLAY_COUNTER_LEN);
+ }
+ 
++#ifdef MTK_WPA3_SUPPORT
++void wpa_sm_update_pmk(struct wpa_sm *sm, u8 *pmk, int pmk_len)
++{
++	os_memcpy(sm->pmk, pmk, pmk_len);
++	sm->pmk_len = pmk_len;
++}
++#endif
+ 
+ void wpa_sm_pmksa_cache_flush(struct wpa_sm *sm, void *network_ctx)
+ {
+diff --git a/src/rsn_supp/wpa.h b/src/rsn_supp/wpa.h
+index 41daaae..e7f93e1 100755
+--- a/src/rsn_supp/wpa.h
++++ b/src/rsn_supp/wpa.h
+@@ -206,6 +206,10 @@
+ 
+ void wpa_sm_update_replay_ctr(struct wpa_sm *sm, const u8 *replay_ctr);
+ 
++#ifdef MTK_WPA3_SUPPORT
++void wpa_sm_update_pmk(struct wpa_sm *sm, u8 *pmk, int pmk_len);
++#endif
++
+ void wpa_sm_pmksa_cache_flush(struct wpa_sm *sm, void *network_ctx);
+ void wpa_sm_external_pmksa_cache_flush(struct wpa_sm *sm, void *network_ctx);
+ 
+diff --git a/wpa_supplicant/Makefile b/wpa_supplicant/Makefile
+index cb66def..f885649 100755
+--- a/wpa_supplicant/Makefile
++++ b/wpa_supplicant/Makefile
+@@ -238,6 +238,12 @@
+ OBJS += ../src/common/ocv.o
+ endif
+ 
++#ifdef CONFIG_CUSTOMIZED_SUPPLICANT
++CFLAGS += -DCONFIG_CUSTOMIZED_SUPPLICANT
++#endif
++#ifdef CONFIG_MTK_WPA3_SUPPORT
++CFLAGS += -DMTK_WPA3_SUPPORT
++#endif
+ ifdef CONFIG_IEEE80211R
+ CFLAGS += -DCONFIG_IEEE80211R
+ OBJS += ../src/rsn_supp/wpa_ft.o
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index f55e184..fab31f8 100755
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -3400,6 +3400,14 @@
+ 		}
+ 		wpa_supplicant_cancel_auth_timeout(wpa_s);
+ 		wpa_supplicant_set_state(wpa_s, WPA_COMPLETED);
++#ifdef CONFIG_CUSTOMIZED_SUPPLICANT
++		printf("Adding %s in bridge for open mode \n", wpa_s->ifname);
++		{
++			char cmd[100];
++			os_snprintf(cmd, sizeof(cmd), "brctl addif br-lan %s", wpa_s->ifname);
++			system(cmd);
++		}
++#endif
+ 	} else if (!ft_completed) {
+ 		/* Timeout for receiving the first EAPOL packet */
+ 		wpa_supplicant_req_auth_timeout(wpa_s, 10, 0);
+@@ -5735,6 +5743,19 @@
+ 						 data->sta_opmode.rx_nss);
+ #endif /* CONFIG_AP */
+ 		break;
++
++#ifdef MTK_WPA3_SUPPORT
++	case EVENT_NOTIFY_PMK:
++		wpa_sm_update_pmk(wpa_s->wpa, data->pmk_info.pmk, data->pmk_info.pmk_len);
++		break;
++
++	case EVENT_NOTIFY_PMKSA:
++		wpa_sm_pmksa_cache_add(wpa_s->wpa, data->pmksa_info.pmk, data->pmksa_info.pmk_len,
++					data->pmksa_info.pmkid, data->pmksa_info.aa,
++					NULL);
++                 break;
++#endif
++
+ 	case EVENT_UNPROT_BEACON:
+ 		wpas_event_unprot_beacon(wpa_s, &data->unprot_beacon);
+ 		break;
+diff --git a/wpa_supplicant/scan.c b/wpa_supplicant/scan.c
+index b0094ca..b76c217 100755
+--- a/wpa_supplicant/scan.c
++++ b/wpa_supplicant/scan.c
+@@ -1466,6 +1466,14 @@
+ 			sec, usec);
+ 		return;
+ 	}
++#ifdef CONFIG_CUSTOMIZED_SUPPLICANT
++        if (wpa_key_mgmt_wpa_psk(wpa_s->key_mgmt)) {
++			char cmd[100];
++			printf("Delete interface %s from bridge \n", wpa_s->ifname);
++			os_snprintf(cmd, sizeof(cmd), "brctl delif br-lan %s", wpa_s->ifname);
++			system(cmd);
++	}
++#endif
+ 
+ 	res = eloop_deplete_timeout(sec, usec, wpa_supplicant_scan, wpa_s,
+ 				    NULL);
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index d37a994..e92bff8 100755
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1536,10 +1536,12 @@
+ #endif /* CONFIG_NO_WPA */
+ 
+ 	sel = ie.key_mgmt & ssid->key_mgmt;
++#ifndef MTK_WPA3_SUPPORT
+ #ifdef CONFIG_SAE
+ 	if (!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SAE))
+ 		sel &= ~(WPA_KEY_MGMT_SAE | WPA_KEY_MGMT_FT_SAE);
+ #endif /* CONFIG_SAE */
++#endif
+ #ifdef CONFIG_IEEE80211R
+ 	if (!(wpa_s->drv_flags & (WPA_DRIVER_FLAGS_SME |
+ 				  WPA_DRIVER_FLAGS_UPDATE_FT_IES)))
+@@ -3893,6 +3895,19 @@
+ 		if (ssid->psk_set)
+ 			params.psk = ssid->psk;
+ 	}
++
++#ifdef MTK_WPA3_SUPPORT
++	if(params.key_mgmt_suite == WPA_KEY_MGMT_SAE)
++	{
++		params.passphrase = ssid->sae_password;
++		if (!params.passphrase)
++			params.passphrase = ssid->passphrase;
++		if(wpa_s->conf->sae_groups && (wpa_s->conf->sae_groups[0] != 0))
++			params.sae_group = wpa_s->conf->sae_groups[0];
++		else
++			params.sae_group = 19;
++	}
++#endif
+ 
+ 	if ((wpa_s->drv_flags & WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_8021X) &&
+ 	    (params.key_mgmt_suite == WPA_KEY_MGMT_IEEE8021X ||

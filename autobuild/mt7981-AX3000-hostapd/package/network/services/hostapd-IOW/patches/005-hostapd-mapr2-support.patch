@@ -1,0 +1,818 @@
+From fff8afa6ad99c5b33ce6d164ac680233ad966b20 Mon Sep 17 00:00:00 2001
+From: mtk23508 <gurpreet.bhatia@mediatek.com>
+Date: Mon, 25 Apr 2022 14:39:03 +0800
+Subject: [PATCH] [WCNCR00260944][[MT7981] Changes for HOSTAPD_MAP_SUPPORT (till MAP R2)]
+
+[Description]
+Hostapd changes for HOSTAPD_MAP_SUPPPORT (till MAP R2).[Enabled by
+default]
+
+[Release-log]
+N/A
+
+Signed-off-by: mtk23508 <gurpreet.bhatia@mediatek.com>
+CR-Id: WCNCR00260944
+Change-Id: Id2ff6174f3d8bd399030e2716505876775539078
+---
+
+diff --git a/hostapd/Makefile b/hostapd/Makefile
+index 881a578..9cb97a2 100644
+--- a/hostapd/Makefile
++++ b/hostapd/Makefile
+@@ -278,6 +278,8 @@
+ CFLAGS += -DCONFIG_OCV
+ OBJS += ../src/common/ocv.o
+ endif
++#Mediatek MAP support in hostapd
++#CFLAGS += -DHOSTAPD_MAP_SUPPORT
+ 
+ #save pmkid generated in hostapd to drivers
+ CFLAGS += -DHOSTAPD_PMKID_IN_DRIVER_SUPPORT
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index 10abe96..1ddd748 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -3873,6 +3873,94 @@
+ 		bss->wps_nfc_dev_pw = wpabuf_parse_bin(pos);
+ 		bss->wps_nfc_pw_from_config = 1;
+ #endif /* CONFIG_WPS_NFC */
++#ifdef HOSTAPD_MAP_SUPPORT
++	} else if (os_strcmp(buf, "map_vendor_extension") == 0) {
++		bss->map_vendor_extension = atoi(pos);
++	} else if (os_strcmp(buf, "bh0macaddr") == 0 ||
++			   os_strcmp(buf, "bh1macaddr") == 0 ||
++			   os_strcmp(buf, "bh2macaddr") == 0) {
++		int j = buf[os_strlen("bh")] - '0';
++		wpa_printf(MSG_ERROR, "Line %d: bh%dmacaddr '%s'",
++			  line, j, pos);
++		if (hwaddr_aton(pos, bss->bh_profile[j].bh_macaddr)) {
++			wpa_printf(MSG_ERROR, "Invalid BH MAC address '%s' at "
++				   "line %d", pos, line);			
++			os_memset(bss->bh_profile[j].bh_macaddr, 0, ETH_ALEN);
++		}	   
++		wpa_printf(MSG_ERROR, "bh%dmacaddr = "MACSTR"\n",j, 
++					MAC2STR(bss->bh_profile[j].bh_macaddr));
++	} else if (os_strcmp(buf, "bh0ssid") == 0 ||
++			   os_strcmp(buf, "bh1ssid") == 0 ||
++			   os_strcmp(buf, "bh2ssid") == 0) {
++		int j = buf[os_strlen("bh")] - '0';
++		wpa_printf(MSG_ERROR, "Line %d: bh%dssid '%s'",
++						   line, j, pos);
++		bss->bh_profile[j].bh_ssid_len = os_strlen(pos);
++		if (bss->bh_profile[j].bh_ssid_len > SSID_MAX_LEN ||
++			bss->bh_profile[j].bh_ssid_len < 1) {
++			wpa_printf(MSG_ERROR, "Line %d: invalid BH%dSSID '%s'",
++				   line, j, pos);
++		} else
++			os_memcpy(bss->bh_profile[j].bh_ssid, pos, bss->bh_profile[j].bh_ssid_len);    
++	} else if (os_strcmp(buf, "bh0wpa") == 0 ||
++			   os_strcmp(buf, "bh1wpa") == 0 ||
++			   os_strcmp(buf, "bh2wpa") == 0)  {
++		int j = buf[os_strlen("bh")] - '0';
++		if (j < 0 || j > BAND_NUM)
++			return 1;
++		bss->bh_profile[j].bh_wpa = atoi(pos);
++	} else if (os_strcmp(buf, "bh0wpa_key_mgmt") == 0 ||
++			   os_strcmp(buf, "bh1wpa_key_mgmt") == 0 ||
++			   os_strcmp(buf, "bh2wpa_key_mgmt") == 0)	{
++		int j = buf[os_strlen("bh")] - '0';
++		if (j < 0 || j > BAND_NUM)
++			return 1;	
++		bss->bh_profile[j].bh_wpa_key_mgmt = hostapd_config_parse_key_mgmt(line, pos);
++		if (bss->bh_profile[j].bh_wpa_key_mgmt == -1)
++			return 1;
++	} else if (os_strcmp(buf, "bh0wpa_passphrase") == 0 ||
++			   os_strcmp(buf, "bh1wpa_passphrase") == 0 ||
++			   os_strcmp(buf, "bh2wpa_passphrase") == 0) {
++		int len = os_strlen(pos);
++		int j = buf[os_strlen("bh")] - '0';
++		if (j < 0 || j > BAND_NUM)
++			return 1;
++		wpa_printf(MSG_ERROR, "Line %d: bh%dwpa_passphrase '%s'",
++				   line, j, pos);
++		if (len < 8 || len > 63) {
++			wpa_printf(MSG_ERROR, "Line %d: invalid BH%d WPA passphrase length %d (expected 8..63)",
++				   line, j, len);
++			return 1;
++		}
++		os_memcpy(bss->bh_profile[j].bh_wpa_passphrase, pos, len);
++	}  else if (os_strcmp(buf, "bh0rsn_pairwise") == 0 ||
++				os_strcmp(buf, "bh1rsn_pairwise") == 0 ||
++				os_strcmp(buf, "bh2rsn_pairwise") == 0) {
++		int j = buf[os_strlen("bh")] - '0';
++		if (j < 0 || j > BAND_NUM)
++			return 1;
++		bss->bh_profile[j].bh_rsn_pairwise = hostapd_config_parse_cipher(line, pos);
++		if (bss->bh_profile[j].bh_rsn_pairwise == -1 || bss->bh_profile[j].bh_rsn_pairwise == 0)
++			return 1;
++		if (bss->bh_profile[j].bh_rsn_pairwise &
++			(WPA_CIPHER_NONE | WPA_CIPHER_WEP40 | WPA_CIPHER_WEP104)) {
++			wpa_printf(MSG_ERROR, "Line %d: unsupported bh%dpairwise cipher suite '%s'",
++				   line, j, pos);
++			return 1;
++		}
++		wpa_printf(MSG_ERROR, "Line %d: bh%dpairwise cipher suite '%s'",
++			line, j, pos);
++	} else if (os_strcmp(buf, "bh0map_vendor_extension") == 0 ||
++			   os_strcmp(buf, "bh1map_vendor_extension") == 0 ||
++			   os_strcmp(buf, "bh2map_vendor_extension") == 0) {
++		int j = buf[os_strlen("bh")] - '0';
++		if (j < 0 || j > BAND_NUM)
++			return 1;
++		bss->bh_profile[j].bh_map_vendor_extension = atoi(pos);
++		wpa_printf(MSG_ERROR, "Line %d: bh%dmap_vendor_extension '%s'",
++				line, j, pos);	
++#endif /* MAP_SUPPORT */
++
+ #endif /* CONFIG_WPS */
+ #ifdef CONFIG_P2P_MANAGER
+ 	} else if (os_strcmp(buf, "manage_p2p") == 0) {
+diff --git a/hostapd/ctrl_iface.c b/hostapd/ctrl_iface.c
+index 86adf18..414e655 100644
+--- a/hostapd/ctrl_iface.c
++++ b/hostapd/ctrl_iface.c
+@@ -1361,6 +1361,67 @@
+ 	return pos - buf;
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT
++static int hostapd_ctrl_iface_get_bh_config(struct hostapd_data *hapd,
++					 char *buf, size_t buflen)
++{
++	int ret, band_idx = 0;
++	char *pos, *end;
++
++	pos = buf;
++	end = buf + buflen;
++
++	for (band_idx = 0; band_idx < BAND_5GH; band_idx++) {
++		ret = os_snprintf(pos, end - pos, "bh%d_bssid=" MACSTR "\n"
++				  "bh%d_ssid=%s\n",
++				  band_idx,
++				  MAC2STR(hapd->conf->bh_profile[band_idx].bh_macaddr),
++				  band_idx,
++				  wpa_ssid_txt(hapd->conf->bh_profile[band_idx].bh_ssid,
++					       hapd->conf->bh_profile[band_idx].bh_ssid_len));
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++
++
++		if (hapd->conf->bh_profile[band_idx].bh_wpa) {
++			ret = os_snprintf(pos, end - pos, "bh%d_wpa=%d\n", band_idx, hapd->conf->bh_profile[band_idx].bh_wpa);
++			if (os_snprintf_error(end - pos, ret))
++				return pos - buf;
++			pos += ret;
++		}
++
++		if (hapd->conf->bh_profile[band_idx].bh_wpa && hapd->conf->bh_profile[band_idx].bh_wpa_key_mgmt) {
++			ret = os_snprintf(pos, end - pos, "bh%d_key_mgmt=", band_idx);
++			if (os_snprintf_error(end - pos, ret))
++				return pos - buf;
++			pos += ret;
++
++			pos += hostapd_ctrl_iface_get_key_mgmt(hapd, pos, end - pos);
++
++			ret = os_snprintf(pos, end - pos, "\n");
++			if (os_snprintf_error(end - pos, ret))
++				return pos - buf;
++			pos += ret;
++		}
++		ret = os_snprintf(pos, end - pos, "bh%d_map_vendor_extension=%u\n",
++				  band_idx,
++				  hapd->conf->bh_profile[band_idx].bh_map_vendor_extension);
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++
++		ret = os_snprintf(pos, end - pos, "bh%d_hidden_ssid=%u\n",
++							band_idx,
++							hapd->conf->bh_profile[band_idx].bh_hidden_ssid);
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++
++	}
++	return pos - buf;
++}
++#endif
+ 
+ static void hostapd_disassoc_accept_mac(struct hostapd_data *hapd)
+ {
+@@ -1626,6 +1687,16 @@
+ 	return 0;
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT	
++static int hostapd_ctrl_iface_config_reload(struct hostapd_iface *iface)
++{
++	if (hostapd_reload_config(iface) < 0) {
++		wpa_printf(MSG_ERROR, "Reloading with new config of interface failed");
++		return -1;
++	}
++	return 0;
++}
++#endif /* HOSTAPD_MAP_SUPPORT */
+ 
+ static int hostapd_ctrl_iface_disable(struct hostapd_iface *iface)
+ {
+@@ -3676,6 +3747,12 @@
+ 	} else if (os_strcmp(buf, "GET_CONFIG") == 0) {
+ 		reply_len = hostapd_ctrl_iface_get_config(hapd, reply,
+ 							  reply_size);
++#ifdef HOSTAPD_MAP_SUPPORT
++	} else if (os_strcmp(buf, "GET_BH_CONFIG") == 0) {
++		reply_len = hostapd_ctrl_iface_get_bh_config(hapd, reply,
++							  reply_size);
++#endif
++
+ 	} else if (os_strncmp(buf, "SET ", 4) == 0) {
+ 		if (hostapd_ctrl_iface_set(hapd, buf + 4))
+ 			reply_len = -1;
+@@ -3688,6 +3765,12 @@
+ 	} else if (os_strcmp(buf, "RELOAD_WPA_PSK") == 0) {
+ 		if (hostapd_ctrl_iface_reload_wpa_psk(hapd))
+ 			reply_len = -1;
++#ifdef HOSTAPD_MAP_SUPPORT		
++	} else if (os_strncmp(buf, "CONFIG_RELOAD", 13) == 0) {
++		if (hostapd_ctrl_iface_config_reload(hapd->iface))
++			reply_len = -1;
++#endif /* HOSTAPD_MAP_SUPPORT */
++
+ 	} else if (os_strncmp(buf, "RELOAD", 6) == 0) {
+ 		if (hostapd_ctrl_iface_reload(hapd->iface))
+ 			reply_len = -1;
+diff --git a/hostapd/hostapd_cli.c b/hostapd/hostapd_cli.c
+index 2609121..ba17205 100644
+--- a/hostapd/hostapd_cli.c
++++ b/hostapd/hostapd_cli.c
+@@ -239,6 +239,12 @@
+ 	return wpa_ctrl_command(ctrl, buf);
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT
++static int hostapd_cli_cmd_config_reload(struct wpa_ctrl *ctrl, int argc, char *argv[])
++{
++	return wpa_ctrl_command(ctrl, "CONFIG_RELOAD");
++}
++#endif
+ 
+ static int hostapd_cli_cmd_ping(struct wpa_ctrl *ctrl, int argc, char *argv[])
+ {
+@@ -720,6 +726,13 @@
+ 	return wpa_ctrl_command(ctrl, "GET_CONFIG");
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT
++static int hostapd_cli_cmd_get_bh_config(struct wpa_ctrl *ctrl, int argc,
++				      char *argv[])
++{
++	return wpa_ctrl_command(ctrl, "GET_BH_CONFIG");
++}
++#endif
+ 
+ static int wpa_ctrl_command_sta(struct wpa_ctrl *ctrl, const char *cmd,
+ 				char *addr, size_t addr_len, int print)
+@@ -1619,6 +1632,10 @@
+ 	  "= send BSS Transition Management Request" },
+ 	{ "get_config", hostapd_cli_cmd_get_config, NULL,
+ 	  "= show current configuration" },
++#ifdef HOSTAPD_MAP_SUPPORT
++	{ "get_bh_config", hostapd_cli_cmd_get_bh_config, NULL,
++	  "= show current backhaul configuration" },
++#endif
+ 	{ "help", hostapd_cli_cmd_help, hostapd_cli_complete_help,
+ 	  "= show this usage help" },
+ 	{ "interface", hostapd_cli_cmd_interface, hostapd_complete_interface,
+@@ -1661,6 +1678,11 @@
+ 	  "= enable hostapd on current interface" },
+ 	{ "reload", hostapd_cli_cmd_reload, NULL,
+ 	  "= reload configuration for current interface" },
++#ifdef HOSTAPD_MAP_SUPPORT
++	{ "config_reload", hostapd_cli_cmd_config_reload, NULL,
++	  "= reload configuration from conf file for current interface" },
++#endif
++
+ 	{ "disable", hostapd_cli_cmd_disable, NULL,
+ 	  "= disable hostapd on current interface" },
+ 	{ "update_beacon", hostapd_cli_cmd_update_beacon, NULL,
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index c15bb58..efc445e 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -19,6 +19,9 @@
+ #include "wps/wps.h"
+ #include "fst/fst.h"
+ #include "vlan.h"
++#ifdef HOSTAPD_MAP_SUPPORT
++#include "map.h"
++#endif
+ 
+ /**
+  * mesh_conf - local MBSS state and settings
+@@ -511,6 +514,11 @@
+ 	struct wpabuf *wps_nfc_dh_pubkey;
+ 	struct wpabuf *wps_nfc_dh_privkey;
+ 	struct wpabuf *wps_nfc_dev_pw;
++#ifdef HOSTAPD_MAP_SUPPORT
++	u8 map_vendor_extension;
++	struct map_bh_profile bh_profile[BAND_NUM];
++#endif /* MAP_SUPPORT */
++
+ #endif /* CONFIG_WPS */
+ 	int pbc_in_m1;
+ 	char *server_id;
+diff --git a/src/ap/map.h b/src/ap/map.h
+new file mode 100755
+index 0000000..6040a0c
+--- /dev/null
++++ b/src/ap/map.h
+@@ -0,0 +1,38 @@
++/*
++ * hostapd / MAP definition
++ * Copyright (c) 2015, Jouni Malinen <j@w1.fi>
++ *
++ * This software may be distributed under the terms of the BSD license.
++ * See README for more details.
++ */
++
++#ifndef MAP_H
++#define MAP_H
++
++#define BAND_2G							0
++#define BAND_5GL						1
++#define BAND_5GH						2
++#define BAND_NUM						3
++
++/* spec v171027 */
++enum MAPRole {
++	MAP_ROLE_TEARDOWN = 4,
++	MAP_ROLE_FRONTHAUL_BSS = 5,
++	MAP_ROLE_BACKHAUL_BSS = 6,
++	MAP_ROLE_BACKHAUL_STA = 7,
++};
++
++struct map_bh_profile {
++	u8 bh_macaddr[ETH_ALEN];
++	u8 bh_ssid[SSID_MAX_LEN];
++	u8 bh_ssid_len; 
++	u8 bh_wpa;
++	int bh_wpa_key_mgmt;
++	u8 bh_wpa_passphrase[32];
++	int bh_rsn_pairwise;
++	u8 bh_map_vendor_extension;
++	u8 bh_hidden_ssid;
++//	u8 bh_profile_valid;
++};
++
++#endif /* MAP_H */
+diff --git a/src/ap/wps_hostapd.c b/src/ap/wps_hostapd.c
+index 4f1c76b..09568e6 100644
+--- a/src/ap/wps_hostapd.c
++++ b/src/ap/wps_hostapd.c
+@@ -1083,6 +1083,9 @@
+ 	struct wps_context *wps;
+ 	struct wps_registrar_config cfg;
+ 	u8 *multi_ap_netw_key = NULL;
++#ifdef HOSTAPD_MAP_SUPPORT
++	int bh_idx = 0;
++#endif /* HOSTAPD_MAP_SUPPORT */
+ 
+ 	if (conf->wps_state == 0) {
+ 		hostapd_wps_clear_ies(hapd, 0);
+@@ -1120,6 +1123,11 @@
+ 	}
+ 	wps->ssid_len = hapd->conf->ssid.ssid_len;
+ 	os_memcpy(wps->ssid, hapd->conf->ssid.ssid, wps->ssid_len);
++#ifdef HOSTAPD_MAP_SUPPORT
++	wps->map_ext_attribute = hapd->conf->map_vendor_extension;
++	os_memcpy(wps->bh_profile, hapd->conf->bh_profile, sizeof(struct map_bh_profile) * BAND_NUM);
++#endif /*HOSTAPD_MAP_SUPPORT*/
++
+ 	wps->ap = 1;
+ 	os_memcpy(wps->dev.mac_addr, hapd->own_addr, ETH_ALEN);
+ 	wps->dev.device_name = hapd->conf->device_name ?
+@@ -1215,6 +1223,23 @@
+ 		}
+ #endif /* CONFIG_NO_TKIP */
+ 	}
++#ifdef HOSTAPD_MAP_SUPPORT //fill BH Profile's security parameters
++	for (bh_idx = BAND_2G; bh_idx < BAND_5GH; bh_idx++) {
++		if (conf->bh_profile[bh_idx].bh_wpa & WPA_PROTO_RSN) {
++			if (conf->bh_profile[bh_idx].bh_wpa_key_mgmt & WPA_KEY_MGMT_PSK)
++				wps->bh_auth_types[bh_idx] |= WPS_AUTH_WPA2PSK;
++	
++			if (conf->bh_profile[bh_idx].bh_rsn_pairwise & (WPA_CIPHER_CCMP | WPA_CIPHER_GCMP |
++						  WPA_CIPHER_CCMP_256 |
++						  WPA_CIPHER_GCMP_256)) {
++				wps->bh_encr_types_rsn[bh_idx] |= WPS_ENCR_AES;
++			}
++		} else { /*To discuss*/
++			wps->bh_auth_types[bh_idx] = WPS_AUTH_OPEN;
++			wps->bh_encr_types_rsn[bh_idx] = WPS_ENCR_NONE;
++		}
++	}
++#endif
+ 
+ 	if (conf->ssid.security_policy == SECURITY_PLAINTEXT) {
+ 		wps->encr_types |= WPS_ENCR_NONE;
+diff --git a/src/drivers/linux_ioctl.c b/src/drivers/linux_ioctl.c
+index 0db6634..a592b6c 100644
+--- a/src/drivers/linux_ioctl.c
++++ b/src/drivers/linux_ioctl.c
+@@ -97,6 +97,7 @@
+ 		return -1;
+ 	}
+ 
++	wpa_printf(MSG_ERROR, "iface mac addr %s " MACSTR"\n", ifname, MAC2STR(ifr.ifr_hwaddr.sa_data));
+ 	if (os_memcmp(ifr.ifr_hwaddr.sa_data, empty, ETH_ALEN) == 0) {
+ 		wpa_printf(MSG_ERROR, "%s: MAC Adress is Empty", ifname);
+ 		return -1;
+diff --git a/src/wps/wps.h b/src/wps/wps.h
+index fed3e28..f354d4e 100644
+--- a/src/wps/wps.h
++++ b/src/wps/wps.h
+@@ -11,6 +11,9 @@
+ 
+ #include "common/ieee802_11_defs.h"
+ #include "wps_defs.h"
++#ifdef HOSTAPD_MAP_SUPPORT
++#include "ap/map.h"
++#endif
+ 
+ /**
+  * enum wsc_op_code - EAP-WSC OP-Code values
+@@ -709,6 +712,9 @@
+ 	 * encr_types_rsn - Enabled encryption types for RSN (WPS_ENCR_*)
+ 	 */
+ 	u16 encr_types_rsn;
++#ifdef HOSTAPD_MAP_SUPPORT
++	u16 bh_encr_types_rsn[BAND_NUM];
++#endif
+ 
+ 	/**
+ 	 * encr_types_wpa - Enabled encryption types for WPA (WPS_ENCR_*)
+@@ -719,6 +725,9 @@
+ 	 * auth_types - Authentication types (bit field of WPS_AUTH_*)
+ 	 */
+ 	u16 auth_types;
++#ifdef HOSTAPD_MAP_SUPPORT
++	u16 bh_auth_types[BAND_NUM];
++#endif
+ 
+ 	/**
+ 	 * encr_types - Current AP encryption type (WPS_ENCR_*)
+@@ -838,6 +847,10 @@
+ 	struct upnp_pending_message *upnp_msgs;
+ 
+ 	u16 ap_nfc_dev_pw_id;
++#ifdef HOSTAPD_MAP_SUPPORT	
++	u8 map_ext_attribute;
++	struct map_bh_profile bh_profile[BAND_NUM];
++#endif /*HOSTAPD_MAP_SUPPORT*/
+ 	struct wpabuf *ap_nfc_dh_pubkey;
+ 	struct wpabuf *ap_nfc_dh_privkey;
+ 	struct wpabuf *ap_nfc_dev_pw;
+diff --git a/src/wps/wps_attr_parse.c b/src/wps/wps_attr_parse.c
+index fd51635..c0d2ece 100644
+--- a/src/wps/wps_attr_parse.c
++++ b/src/wps/wps_attr_parse.c
+@@ -67,8 +67,20 @@
+ 		}
+ 		attr->registrar_configuration_methods = pos;
+ 		break;
++#ifdef HOSTAPD_MAP_SUPPORT		
+ 	case WFA_ELEM_MULTI_AP:
+ 		if (len != 1) {
++			wpa_printf(MSG_ERROR, "WPS: Invalid MAP Extension attribute length %u",
++				   len);
++			return -1;
++		}
++		attr->map_ext_attribute = pos;
++		attr->multi_ap_ext = NULL;
++		break;
++#else /* MAP_SUPPORT */
++
++	case WFA_ELEM_MULTI_AP:
++		if (len != 1) {
+ 			wpa_printf(MSG_DEBUG,
+ 				   "WPS: Invalid Multi-AP Extension length %u",
+ 				   len);
+@@ -78,6 +90,7 @@
+ 		wpa_printf(MSG_DEBUG, "WPS: Multi-AP Extension 0x%02x",
+ 			   attr->multi_ap_ext);
+ 		break;
++#endif
+ 	default:
+ 		wpa_printf(MSG_MSGDUMP, "WPS: Skipped unknown WFA Vendor "
+ 			   "Extension subelement %u", id);
+diff --git a/src/wps/wps_attr_parse.h b/src/wps/wps_attr_parse.h
+index 4de27b2..29fb855 100644
+--- a/src/wps/wps_attr_parse.h
++++ b/src/wps/wps_attr_parse.h
+@@ -56,7 +56,9 @@
+ 	const u8 *request_to_enroll; /* 1 octet (Bool) */
+ 	const u8 *ap_channel; /* 2 octets */
+ 	const u8 *registrar_configuration_methods; /* 2 octets */
+-
++#ifdef HOSTAPD_MAP_SUPPORT	
++	const u8 *map_ext_attribute; /* 1 octets */ 
++#endif /*MAP_SUPPORT*/
+ 	/* variable length fields */
+ 	const u8 *manufacturer;
+ 	const u8 *model_name;
+diff --git a/src/wps/wps_dev_attr.c b/src/wps/wps_dev_attr.c
+index c2e949c..5d8ae63 100644
+--- a/src/wps/wps_dev_attr.c
++++ b/src/wps/wps_dev_attr.c
+@@ -412,6 +412,20 @@
+ 		   dev->multi_ap_ext);
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT
++int wps_process_map_ext_attribute(struct wps_device_data *dev, const u8 *map_ext_attribute)
++{
++	if (map_ext_attribute == NULL) {
++		wpa_printf(MSG_DEBUG, "WPS: No MAP extension attribute received");		
++		return 0; /*Not mandatory*/
++	}
++	dev->vendor_ext[WFA_ELEM_MULTI_AP] = wpabuf_alloc(sizeof(u8));
++	wpabuf_put_data(dev->vendor_ext[WFA_ELEM_MULTI_AP], map_ext_attribute, sizeof(u8));
++	wpa_hexdump_buf(MSG_DEBUG, "WPS: MAP Ext Attribute", dev->vendor_ext[WFA_ELEM_MULTI_AP]);
++
++	return 0;
++}
++#endif /*HOSTAPD_MAP_SUPPORT*/
+ 
+ int wps_process_rf_bands(struct wps_device_data *dev, const u8 *bands)
+ {
+diff --git a/src/wps/wps_i.h b/src/wps/wps_i.h
+index 2cf22d4..1560a41 100644
+--- a/src/wps/wps_i.h
++++ b/src/wps/wps_i.h
+@@ -87,11 +87,17 @@
+ 	 * encr_type - Available encryption types
+ 	 */
+ 	u16 encr_type;
++#ifdef HOSTAPD_MAP_SUPPORT
++	u16 bh_encr_type[BAND_NUM];
++#endif
+ 
+ 	/**
+ 	 * auth_type - Available authentication types
+ 	 */
+ 	u16 auth_type;
++#ifdef HOSTAPD_MAP_SUPPORT
++	u16 bh_auth_type[BAND_NUM];
++#endif
+ 
+ 	u8 *new_psk;
+ 	size_t new_psk_len;
+diff --git a/src/wps/wps_registrar.c b/src/wps/wps_registrar.c
+index 9587293..9891752 100644
+--- a/src/wps/wps_registrar.c
++++ b/src/wps/wps_registrar.c
+@@ -22,6 +22,9 @@
+ #include "wps_dev_attr.h"
+ #include "wps_upnp.h"
+ #include "wps_upnp_i.h"
++#ifdef HOSTAPD_MAP_SUPPORT
++#include "common/defs.h"
++#endif /*HOSTAPD_MAP_SUPPORT*/
+ 
+ #ifndef CONFIG_WPS_STRICT
+ #define WPS_WORKAROUNDS
+@@ -1619,6 +1622,16 @@
+ int wps_build_cred(struct wps_data *wps, struct wpabuf *msg)
+ {
+ 	struct wpabuf *cred;
++#ifdef HOSTAPD_MAP_SUPPORT	
++	u8 bh_idx = 0;
++	u8 peer_map_ext_attribute = 0;
++	u16 bh_encr_type[BAND_NUM]; /*Select the best bh  encryption type*/
++	u16 bh_auth_type[BAND_NUM]; /*Select the best bh authentication type*/
++	struct wps_credential bh_credential = {0};
++	struct map_bh_profile *bh_profile = NULL;	
++	u8 build_bh_cred = 0;	
++#endif /* HOSTAP_MAP_SUPPORT */
++
+ 	struct wps_registrar *reg = wps->wps->registrar;
+ 	const u8 *pskfile_psk;
+ 	char hex[65];
+@@ -1631,6 +1644,21 @@
+ 		os_memcpy(&wps->cred, wps->use_cred, sizeof(wps->cred));
+ 		goto use_provided;
+ 	}
++#ifdef HOSTAPD_MAP_SUPPORT
++	if((wps->wps->map_ext_attribute & BIT(MAP_ROLE_FRONTHAUL_BSS)) 
++		&& (wps->peer_dev.vendor_ext[WFA_ELEM_MULTI_AP] != NULL)) {
++		os_memcpy(&peer_map_ext_attribute,
++			wps->peer_dev.vendor_ext[WFA_ELEM_MULTI_AP]->buf, wps->peer_dev.vendor_ext[WFA_ELEM_MULTI_AP]->used); 		
++		if (peer_map_ext_attribute & BIT(MAP_ROLE_BACKHAUL_STA)) {	
++			wpa_printf(MSG_DEBUG, "Make bh credentials for BH STA\n");
++			wpa_printf(MSG_ERROR, "Make BH credentials for BH STA");
++			build_bh_cred = 1;
++		}
++	}
++	
++	if (build_bh_cred == 0) {
++#endif
++
+ 	os_memset(&wps->cred, 0, sizeof(wps->cred));
+ 
+ 	if (wps->peer_dev.multi_ap_ext == MULTI_AP_BACKHAUL_STA &&
+@@ -1782,6 +1810,52 @@
+ 		os_memcpy(wps->cred.key, hex, wps->new_psk_len * 2);
+ 		wps->cred.key_len = wps->new_psk_len * 2;
+ 	}
++#ifdef HOSTAPD_MAP_SUPPORT	
++	}else {
++	/* Select the best authentication and encryption type of BH BSS */
++#if 0
++	for (bh_idx = 0; bh_idx < BAND_5GH; bh_idx++) {
++		wpa_printf(MSG_DEBUG,
++			   "WPS: Own bh auth types 0x%x - masked Enrollee auth types 0x%x",
++			   wps->wps->auth_types, wps->auth_type);
++		if (wps->wps->bh_auth_types[bh_idx]& WPS_AUTH_WPA2PSK)
++			wps->bh_auth_type[bh_idx] = WPS_AUTH_WPA2PSK;
++		else if (wps->wps->bh_auth_types[bh_idx] & WPS_AUTH_OPEN)
++			wps->bh_auth_type[bh_idx] = WPS_AUTH_OPEN;
++		else {
++			wpa_printf(MSG_DEBUG, "WPS: Unsupported auth_type 0x%x bh_idx %d",
++				   wps->wps->bh_auth_types[bh_idx], bh_idx);
++			return -1;
++		}
++
++		wpa_printf(MSG_DEBUG,
++			   "WPS: bh_idx %d Own encr types rsn: 0x%x - masked Enrollee encr types 0x%x",
++			   bh_idx, wps->wps->bh_encr_types_rsn[bh_idx],
++			   wps->bh_encr_type[bh_idx]);
++
++		if (wps->wps->ap && wps->bh_auth_type[bh_idx] == WPS_AUTH_WPA2PSK)
++			wps->bh_encr_type[bh_idx] &= wps->wps->bh_encr_types_rsn[bh_idx];
++		if (wps->bh_auth_type[bh_idx] == WPS_AUTH_WPA2PSK) {
++			if (wps->bh_encr_type[bh_idx] & WPS_ENCR_AES)
++				wps->bh_encr_type[bh_idx] = WPS_ENCR_AES;
++			else {
++				wpa_printf(MSG_DEBUG, "WPS:bh_idx %d No suitable encryption "
++					   "type for WPA/WPA2", bh_idx);
++				return -1;
++			}
++		} else {
++			if (wps->bh_encr_type[bh_idx] & WPS_ENCR_NONE)
++				wps->bh_encr_type[bh_idx] = WPS_ENCR_NONE;
++			else {
++				wpa_printf(MSG_DEBUG, "WPS: bh_idx %d No suitable encryption "
++					   "type for non-WPA/WPA2 mode", bh_idx);
++				return -1;
++			}
++		}
++	}
++#endif //0
++	}
++#endif
+ 
+ use_provided:
+ #ifdef CONFIG_WPS_TESTING
+@@ -1810,6 +1884,77 @@
+ 		wpabuf_free(cred);
+ 	}
+ #endif /* CONFIG_WPS_TESTING */
++#ifdef HOSTAPD_MAP_SUPPORT
++	if (build_bh_cred == 1) {
++		for (bh_idx = 0; bh_idx < BAND_5GH; bh_idx++) {
++			bh_profile = &wps->wps->bh_profile[bh_idx];
++			os_memset(&bh_credential, 0, sizeof(struct wps_credential));						
++			if (bh_profile->bh_ssid_len <= 0)
++				continue;
++			os_memcpy(bh_credential.ssid, bh_profile->bh_ssid, bh_profile->bh_ssid_len);
++			bh_credential.ssid_len = bh_profile->bh_ssid_len;
++			/*
++			bh_credential.auth_type = wps->bh_auth_type[bh_idx];
++			bh_credential.encr_type = wps->bh_encr_type[bh_idx];
++			bh_credential.key_len = os_strlen(bh_profile->bh_wpa_passphrase);
++			os_memcpy(bh_credential.key, bh_profile->bh_wpa_passphrase, bh_credential.key_len);
++			*/
++			//MESH OPEN - onboarding
++			//	bh0wpa=0
++			if (!bh_profile->bh_wpa) {
++				bh_credential.auth_type = WPS_AUTH_OPEN;
++				bh_credential.encr_type = WPS_ENCR_NONE;
++			} else if ((bh_profile->bh_wpa_key_mgmt) & (WPA_KEY_MGMT_PSK | WPA_KEY_MGMT_SAE)) {
++				/*send WPA2PSK in SAE also, as WPS does not support WPA3*/
++				if (bh_profile->bh_wpa & WPA_PROTO_RSN) {
++					bh_credential.auth_type |= WPS_AUTH_WPA2PSK;
++					if (bh_profile->bh_rsn_pairwise & (WPA_CIPHER_CCMP | WPA_CIPHER_GCMP |
++													WPA_CIPHER_CCMP_256 |WPA_CIPHER_GCMP_256)) {
++						bh_credential.encr_type |= WPS_ENCR_AES;
++					}
++					if (bh_profile->bh_rsn_pairwise & WPA_CIPHER_TKIP) {
++							bh_credential.encr_type |= WPS_ENCR_TKIP;
++					}
++					bh_credential.key_len = os_strlen(bh_profile->bh_wpa_passphrase);
++					os_memcpy(bh_credential.key, bh_profile->bh_wpa_passphrase, bh_credential.key_len);
++				}
++				if (bh_profile->bh_wpa & WPA_PROTO_WPA) {
++					bh_credential.auth_type |= WPS_AUTH_WPAPSK;
++					if (bh_profile->bh_rsn_pairwise & (WPA_CIPHER_CCMP | WPA_CIPHER_GCMP)) {
++						bh_credential.encr_type |= WPS_ENCR_AES;
++					}
++					if (bh_profile->bh_rsn_pairwise & WPA_CIPHER_TKIP) {
++						bh_credential.encr_type |= WPS_ENCR_TKIP;
++					}
++					bh_credential.key_len = os_strlen(bh_profile->bh_wpa_passphrase);
++					os_memcpy(bh_credential.key, bh_profile->bh_wpa_passphrase, bh_credential.key_len);
++				}
++			}
++					os_memcpy(bh_credential.mac_addr, bh_profile->bh_macaddr , ETH_ALEN);
++#if 0
++			wpa_printf(MSG_ERROR,"BH MAC:"
++						MACSTR "BH SSID:%s Auth Type:%d encr_type = %d",
++						MAC2STR(bh_credential.mac_addr),
++						bh_credential.ssid,bh_credential.auth_type,
++						bh_credential.encr_type 					
++					   );
++			wpa_hexdump_buf(MSG_ERROR,
++				"BH Key", bh_credential.key);
++#endif //MCR_HOSTAPD_EXTEND_WPS
++			cred = wpabuf_alloc(200);
++			if (cred == NULL)
++				return -1;
++			if (wps_build_credential(cred, &bh_credential)) {
++				wpabuf_clear_free(cred);
++				return -1;
++			}
++			wpabuf_put_be16(msg, ATTR_CRED);
++			wpabuf_put_be16(msg, wpabuf_len(cred));
++			wpabuf_put_buf(msg, cred);
++			wpabuf_clear_free(cred);
++		}
++	} else {
++#endif
+ 
+ 	cred = wpabuf_alloc(200);
+ 	if (cred == NULL)
+@@ -1824,6 +1969,9 @@
+ 	wpabuf_put_be16(msg, wpabuf_len(cred));
+ 	wpabuf_put_buf(msg, cred);
+ 	wpabuf_clear_free(cred);
++#ifdef HOSTAPD_MAP_SUPPORT
++	}
++#endif	
+ 
+ skip_cred_build:
+ 	if (wps->wps->registrar->extra_cred) {
+@@ -2667,6 +2815,9 @@
+ 	    wps_process_assoc_state(wps, attr->assoc_state) ||
+ 	    wps_process_dev_password_id(wps, attr->dev_password_id) ||
+ 	    wps_process_config_error(wps, attr->config_error) ||
++#ifdef HOSTAPD_MAP_SUPPORT
++		wps_process_map_ext_attribute(&wps->peer_dev, attr->map_ext_attribute) ||
++#endif /* HOSTAPD_MAP_SUPPORT */
+ 	    wps_process_os_version(&wps->peer_dev, attr->os_version))
+ 		return WPS_FAILURE;
+ 
+diff --git a/src/wps/wps_validate.c b/src/wps/wps_validate.c
+index 5c12bce..077db43 100644
+--- a/src/wps/wps_validate.c
++++ b/src/wps/wps_validate.c
+@@ -421,6 +421,29 @@
+ 	return 0;
+ }
+ 
++#ifdef HOSTAPD_MAP_SUPPORT
++static int wps_validate_map_ext_attribute(const u8 *map_ext_attribute,
++						int mandatory)
++{
++	if (map_ext_attribute == NULL) {
++		/* No map ext attribute!! normal STA */
++		if (mandatory) {
++			wpa_printf(MSG_ERROR, "WPS-STRICT: MAP vendor extension "
++				   "attribute missing");
++			return -1;
++		}
++		return 0;
++	}
++	if ((*map_ext_attribute < 0x04) || (*map_ext_attribute > 0x07)) { /*	MAP_ROLE_BACKHAUL_STA = 7	*/
++		wpa_printf(MSG_ERROR, "WPS-STRICT: MAP vendor extension role invalid"
++			   "attribute value 0x%x", *map_ext_attribute);
++		return -1;
++	}
++	return 0;
++
++}
++#endif /* MAP_SUPPORT */
++
+ 
+ static int wps_validate_req_dev_type(const u8 *req_dev_type[], size_t num,
+ 				     int mandatory)
+@@ -1213,6 +1236,9 @@
+ 				      wps2) ||
+ 	    wps_validate_dev_name(attr.dev_name, attr.dev_name_len, wps2) ||
+ 	    wps_validate_request_to_enroll(attr.request_to_enroll, 0) ||
++#ifdef HOSTAPD_MAP_SUPPORT	    
++		wps_validate_map_ext_attribute(attr.map_ext_attribute, 0) ||
++#endif /* MAP_SUPPORT */
+ 	    wps_validate_req_dev_type(attr.req_dev_type, attr.num_req_dev_type,
+ 				      0)) {
+ 		wpa_printf(MSG_INFO, "WPS-STRICT: Invalid Probe Request "

@@ -1,0 +1,64 @@
+#!/bin/sh
+
+if [ -z "$1" ]; then
+	# boot up to check 0x1af[0]
+	Card0AccessMode=$(grep -r INDEX0_profile_path /etc/wireless/l1profile.dat | cut -d "=" -f 2 | xargs grep -r AccessMode | cut -d "=" -f 2)
+	if [ $((Card0AccessMode)) -eq 2 ]; then
+		Card0E2p1AF=$(mtk_factory_rw.sh -r 1 0x1af)
+		if [ $((Card0E2p1AF & 1)) -eq 1 ]; then
+			echo "card0 e2p_1af: Normal mode"
+			#sed -i 's/testmode_en=1/testmode_en=0/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.1.dat | xargs sed -i 's/TestModeEn=1/TestModeEn=0/g'
+		else
+			echo "card0 e2p_1af: Test mode"
+			#sed -i 's/testmode_en=0/testmode_en=1/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.1.dat | xargs sed -i 's/TestModeEn=0/TestModeEn=1/g'
+		fi
+	fi
+
+	# Card1 has to add EEPROM Offset
+	Card1AccessMode=$(grep -r INDEX1_profile_path /etc/wireless/l1profile.dat | cut -d "=" -f 2 | xargs grep -r AccessMode | cut -d "=" -f 2)
+	if [ $((Card1AccessMode)) -eq 2 ]; then
+		Care1EepromOffset=$(grep -r INDEX1_EEPROM_offset /etc/wireless/l1profile.dat | cut -d "=" -f 2)
+		Care1RealE2p1AFOffset=$((Care1EepromOffset + 0x1af))
+		Card1E2p1AF=$(mtk_factory_rw.sh -r 1 $Care1RealE2p1AFOffset)
+		if [ $((Card1E2p1AF & 1)) -eq 1 ]; then
+			echo "card1 e2p_1af: Normal mode"
+			#sed -i 's/testmode_en=1/testmode_en=0/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.2.dat | xargs sed -i 's/TestModeEn=1/TestModeEn=0/g'
+		else
+			echo "card1 e2p_1af: Test mode"
+			#sed -i 's/testmode_en=0/testmode_en=1/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.2.dat | xargs sed -i 's/TestModeEn=0/TestModeEn=1/g'
+		fi
+	fi
+
+	# Card2 has to add EEPROM Offset
+	Card2AccessMode=$(grep -r INDEX2_profile_path /etc/wireless/l1profile.dat | cut -d "=" -f 2 | xargs grep -r AccessMode | cut -d "=" -f 2)
+	if [ $((Card2AccessMode)) -eq 2 ]; then
+		Care2EepromOffset=$(grep -r INDEX2_EEPROM_offset /etc/wireless/l1profile.dat | cut -d "=" -f 2)
+		Care2RealE2p1AFOffset=$((Care2EepromOffset + 0x1af))
+		Card2E2p1AF=$(mtk_factory_rw.sh -r 1 $Care2RealE2p1AFOffset)
+		if [ $((Card2E2p1AF & 1)) -eq 1 ]; then
+			echo "card2 e2p_1af: Normal mode"
+			#sed -i 's/testmode_en=1/testmode_en=0/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.3.dat | xargs sed -i 's/TestModeEn=1/TestModeEn=0/g'
+		else
+			echo "card2 e2p_1af: Test mode"
+			#sed -i 's/testmode_en=0/testmode_en=1/g' /etc/modules.d/mt_hwifi
+			grep -rl TestModeEn /etc/wireless/mediatek/*.3.dat | xargs sed -i 's/TestModeEn=0/TestModeEn=1/g'
+		fi
+	fi
+elif [ $1 == "1" ]; then
+	echo "TestModeEn=1, Test mode"
+	iwpriv ra0 set testmode_en=1
+	grep -rl TestModeEn /etc/wireless/mediatek/*dat | xargs sed -i 's/TestModeEn=0/TestModeEn=1/g'
+	wifi down
+	wifi up
+elif [ $1 == "0" ]; then
+        echo "TestModeEn=0, Normal mode"
+	iwpriv ra0 set testmode_en=0
+        grep -rl TestModeEn /etc/wireless/mediatek/*dat | xargs sed -i 's/TestModeEn=1/TestModeEn=0/g'
+        wifi down
+        wifi up
+fi

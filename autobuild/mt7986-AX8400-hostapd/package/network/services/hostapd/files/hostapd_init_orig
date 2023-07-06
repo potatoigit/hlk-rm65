@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=99
+
+hostapd_app_path=/usr/bin
+
+start()
+{
+	chmod +x $hostapd_app_path/hostapd_app.sh
+	chmod +x $hostapd_app_path/hostapd_ap.sh
+	chmod +x $hostapd_app_path/hostapd_sta.sh
+	chmod +x $hostapd_app_path/hostapd_generate.sh
+	chmod +x $hostapd_app_path/wpa_supplicant_generate.sh
+	$hostapd_app_path/hostapd_ap.sh ra0 open
+	$hostapd_app_path/hostapd_ap.sh rai0 open
+}
+
+stop()
+{
+	echo "nothing to be stopped..."
+}
