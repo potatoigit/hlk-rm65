@@ -36,16 +36,28 @@ mediatek_setup_macs()
 	local wan_mac=""
 	local lan_mac_offset=""
 	local wan_mac_offset=""
+	local base_mac_offset="0x4"
+	base_mac=`hexdump -v -n 6 -s 4 -e '5/1 "%02x" 1/1 "%02x"' /dev/mtd3 2>/dev/null`
+	#base_mac_dec=$((16#${base_mac}))
+	base_mac_dec=$(printf "%d" 0x$base_mac)
+	lan_mac_dec=$((base_mac_dec+1))
+	wan_mac_dec=$((base_mac_dec+2))
 
-	case $board in
-	*)
-		lan_mac_offset="0x2A"
-		wan_mac_offset="0x24"
-		;;
-	esac
+	lan_hex=$(printf "%012x" $lan_mac_dec)
+	wan_hex=$(printf "%012x" $wan_mac_dec)
 
-	lan_mac=$(mtd_get_mac_binary $part_name $lan_mac_offset)
-	wan_mac=$(mtd_get_mac_binary $part_name $wan_mac_offset)
+	#case $board in
+	#*)
+	#	lan_mac_offset="0x2A"
+	#	wan_mac_offset="0x24"
+	#	;;
+	#esac
+	
+	#lan_mac=$(mtd_get_mac_binary $part_name $lan_mac_offset)
+	#wan_mac=$(mtd_get_mac_binary $part_name $wan_mac_offset)
+
+	lan_mac=$(echo $lan_hex | sed 's/.\{2\}/&:/g;s/:$//')
+	wan_mac=$(echo $wan_hex | sed 's/.\{2\}/&:/g;s/:$//')
 
 	case "$lan_mac" in
 		00:00:00:00:00:00);;
