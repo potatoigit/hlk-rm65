@@ -99,12 +99,16 @@ OpenWrt is licensed under GPL-2.0
     首次编译大概需要一个小时 和CPU性能有关。
 
 ### 固件生成路径
-RM65默认选择编译的配置是 MediaTek mt7981-spim-nand-rfb 
-编译的固件在 bin/targets/mediatek/mt7981路径下：
-名称：openwrt-mediatek-mt7981-mt7981-spim-nand-rfb-squashfs-sysupgrade.bin
-
+    RM65默认选择编译的配置是 MediaTek mt7981-spim-nand-rfb 
+    编译的固件在 bin/targets/mediatek/mt7981路径下：
+    名称：openwrt-mediatek-mt7981-mt7981-spim-nand-rfb-squashfs-sysupgrade.bin
+    
 ### DTS配置文件路径：
     target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
+
+### 固件配置：
+    make menuconfig
+    ![输入图片说明](menuconfig.png)
 
 ### 编译环境搭建：
     使用virtualbox 搭建虚拟机编译环境：
