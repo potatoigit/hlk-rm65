@@ -108,12 +108,12 @@ OpenWrt is licensed under GPL-2.0
 
 ### 固件配置：
     make menuconfig
-    ![输入图片说明](menuconfig.png)
+![输入图片说明](menuconfig.png)
 
 ### 编译环境搭建：
     使用virtualbox 搭建虚拟机编译环境：
     virtualbox的官网：https://www.virtualbox.org/
-    ![输入图片说明](virtualbox.org.png)
+![输入图片说明](virtualbox.org.png)
 
 ###编译虚拟机的硬盘链接：
     https://pan.baidu.com/s/1FHvDM295itb0cWIVWie_fw?pwd=39in 
