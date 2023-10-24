@@ -90,25 +90,27 @@ OpenWrt is licensed under GPL-2.0
 
 系统：ubuntu18.04 64bit
 
-新安装系统需要安装的工具：
-sudo apt-get install make quilt git libncurses5-dev build-essential gawk zlib1g-dev
+### 新安装系统需要安装的工具：
+    sudo apt-get install make quilt git libncurses5-dev build-essential gawk zlib1g-dev
 
-编译命令：
-cd rm65; make V=99
+### 固件编译命令：
+    cd rm65; make V=99
 
-首次编译大概需要一个小时 和CPU性能有关。
+    首次编译大概需要一个小时 和CPU性能有关。
 
+### 固件生成路径
 RM65默认选择编译的配置是 MediaTek mt7981-spim-nand-rfb 
 编译的固件在 bin/targets/mediatek/mt7981路径下：
 名称：openwrt-mediatek-mt7981-mt7981-spim-nand-rfb-squashfs-sysupgrade.bin
 
-dts配置文件路径：target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
+### DTS配置文件路径：
+    target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
 
-编译环境搭建：
-使用virtualbox 搭建虚拟机编译环境：
-virtualbox的官网：https://www.virtualbox.org/
-![输入图片说明](virtualbox.org.png)
+### 编译环境搭建：
+    使用virtualbox 搭建虚拟机编译环境：
+    virtualbox的官网：https://www.virtualbox.org/
+    ![输入图片说明](virtualbox.org.png)
 
-编译虚拟机的硬盘链接：
-https://pan.baidu.com/s/1FHvDM295itb0cWIVWie_fw?pwd=39in 
-提取码：39in
+###编译虚拟机的硬盘链接：
+    https://pan.baidu.com/s/1FHvDM295itb0cWIVWie_fw?pwd=39in 
+    提取码：39in
