@@ -86,10 +86,19 @@ For a list of supported devices see the [OpenWrt Hardware Database](https://open
 
 OpenWrt is licensed under GPL-2.0
 
-新安装需要安装的工具：
+补充：
+编译环境：
+系统：ubuntu18.04 64bit
+
+新安装系统需要安装的工具：
 sudo apt-get install make quilt git libncurses5-dev build-essential gawk zlib1g-dev
 
-RM65默认编译的是 MediaTek mt7981-spim-nand-rfb
+cd rm65; make V=99
+
+首次编译大概需要一个小时 和CPU性能有关。
+
+RM65默认选择编译的配置是 MediaTek mt7981-spim-nand-rfb 
 编译的固件在 bin/targets/mediatek/mt7981路径下：
 名称：openwrt-mediatek-mt7981-mt7981-spim-nand-rfb-squashfs-sysupgrade.bin
 
+dts文件路径：target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
