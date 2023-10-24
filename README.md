@@ -103,3 +103,12 @@ RM65默认选择编译的配置是 MediaTek mt7981-spim-nand-rfb
 名称：openwrt-mediatek-mt7981-mt7981-spim-nand-rfb-squashfs-sysupgrade.bin
 
 dts配置文件路径：target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
+
+编译环境搭建：
+使用virtualbox 搭建虚拟机编译环境：
+virtualbox的官网：https://www.virtualbox.org/
+![输入图片说明](virtualbox.org.png)
+
+编译虚拟机的硬盘链接：
+https://pan.baidu.com/s/1FHvDM295itb0cWIVWie_fw?pwd=39in 
+提取码：39in
