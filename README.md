@@ -118,3 +118,4 @@ OpenWrt is licensed under GPL-2.0
 ###编译虚拟机的硬盘链接：
     https://pan.baidu.com/s/1FHvDM295itb0cWIVWie_fw?pwd=39in 
     提取码：39in
+    虚拟机的用户名 hilink 密码:12345678
