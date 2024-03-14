@@ -1,0 +1,47 @@
+#!/bin/sh
+
+get_ip_rate()
+{
+        while read -r line;
+        do
+                mac=$(echo "$line" | awk '{print $2}')
+                ip=$(echo "$line" | awk '{print $3}')
+                hostname=$(echo "$line" | awk '{print $4}')
+
+                rx_0=`iptables -nvx -L GET_IP_RATE | grep $ip | awk -v awk_ip="$ip" '$8 == awk_ip && $9 == "0.0.0.0/0" {print $2}'`
+                tx_0=`iptables -nvx -L GET_IP_RATE | grep $ip | awk -v awk_ip="$ip" '$8 == "0.0.0.0/0" && $9 == awk_ip {print $2}'`
+               	#echo $ip $rx_0 $tx_0
+		sleep 1
+                rx_1=`iptables -nvx -L GET_IP_RATE | grep $ip | awk -v awk_ip="$ip" '$8 == awk_ip && $9 == "0.0.0.0/0" {print $2}'`
+                tx_1=`iptables -nvx -L GET_IP_RATE | grep $ip | awk -v awk_ip="$ip" '$8 == "0.0.0.0/0" && $9 == awk_ip {print $2}'`
+		#echo $ip $rx_1 $tx_1
+                tx_s=`expr $tx_1 - $tx_0`
+                rx_s=`expr $rx_1 - $rx_0`		
+
+                if [ $rx_s -gt $((1024*1024)) ];then
+                        rx_s=`echo $rx_s 1024 | awk '{ printf "%.1f\n", $1/$2/$2}'`
+                        rx_unit="M/s"
+                else
+                        rx_s=`echo $rx_s 1024 | awk '{ printf "%.1f\n", $1/$2}'`
+                        rx_unit="K/s"
+                fi
+
+                if [ $tx_s -gt $((1024*1024)) ];then
+                        tx_s=`echo $tx_s 1024 | awk '{ printf "%.1f\n", $1/$2/$2}'`
+                        tx_unit="M/s"
+                else
+                        tx_s=`echo $tx_s 1024 | awk '{ printf "%.1f\n", $1/$2}'`
+                        tx_unit="K/s"
+                fi
+                echo "$hostname $mac $ip rx_s:$rx_s$rx_unit tx_s:$tx_s$tx_unit"
+
+        done < /tmp/dhcp.leases
+}
+
+main()
+{
+        get_ip_rate
+}
+
+main
+

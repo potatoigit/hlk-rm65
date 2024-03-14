@@ -1,0 +1,56 @@
+#!/bin/sh
+
+del_iptables_rule()
+{
+        iptables -D INPUT -j GET_IP_RATE 2> /dev/null
+        iptables -D OUTPUT -j GET_IP_RATE 2> /dev/null
+        iptables -D FORWARD -j GET_IP_RATE 2> /dev/null
+        iptables -F GET_IP_RATE 2> /dev/null
+}
+
+add_iptables_rule()
+{
+        iptables -t filter -N GET_IP_RATE 2> /dev/null
+        iptables -I INPUT -j GET_IP_RATE 2> /dev/null
+        iptables -I OUTPUT -j GET_IP_RATE 2> /dev/null
+        iptables -I FORWARD -j GET_IP_RATE 2> /dev/null
+}
+
+add_get_ip_rate_rule()
+{
+	while read -r line;
+        do
+                ip=$(echo "$line" | awk '{print $3}')
+		if [ -n "$ip" ];then
+                	check_ip_rate_rule=`iptables -nvx -L GET_IP_RATE | grep $ip`
+			if [ -z "$check_ip_rate_rule" ];then
+				#rx
+	                	iptables -A GET_IP_RATE -s $ip -j ACCEPT
+        	        	#tx
+                		iptables -A GET_IP_RATE -d $ip -j ACCEPT
+			fi
+		fi
+        done < /tmp/dhcp.leases
+
+}
+
+
+main()
+{
+	del_iptables_rule
+	add_iptables_rule
+	
+	old_md5=0
+        while true
+        do
+                new_md5=`md5sum /tmp/dhcp.leases | awk '{print $1}'`
+                if [ $old_md5 != $new_md5 ];then
+                        old_md5=$new_md5
+			add_get_ip_rate_rule
+                fi
+                sleep 1
+        done
+
+}
+
+main
