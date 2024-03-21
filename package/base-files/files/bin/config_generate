@@ -158,6 +158,13 @@ generate_network() {
 		set network.$1.proto='none'
 	EOF
 
+	uci -q batch <<-EOF
+		delete network.4G
+		set network.4G='interface'
+		set network.4G.proto='mobileconnect'
+		set network.4G.device='wwan0'
+	EOF
+
 	case "$protocol" in
 		static)
 			local ipad
@@ -302,7 +309,7 @@ generate_static_system() {
 	uci -q batch <<-EOF
 		delete system.@system[0]
 		add system system
-		set system.@system[-1].hostname='OpenWrt'
+		set system.@system[-1].hostname='HiLink'
 		set system.@system[-1].timezone='UTC'
 		set system.@system[-1].ttylogin='0'
 		set system.@system[-1].log_size='64'
@@ -316,6 +323,21 @@ generate_static_system() {
 		add_list system.ntp.server='1.openwrt.pool.ntp.org'
 		add_list system.ntp.server='2.openwrt.pool.ntp.org'
 		add_list system.ntp.server='3.openwrt.pool.ntp.org'
+
+		delete system.@led[0]
+		add system led
+		set system.@led[-1].name='recv'
+	        set system.@led[-1].sysfs='wan_recv'
+  	        set system.@led[-1].trigger='netdev'
+        	set system.@led[-1].dev='eth1'
+       	 	add_list system.@led[-1].mode='rx'
+
+		add system led
+		set system.@led[-1].name='send'
+	        set system.@led[-1].sysfs='wan_send'
+  	        set system.@led[-1].trigger='netdev'
+        	set system.@led[-1].dev='eth1'
+       	 	add_list system.@led[-1].mode='tx'
 	EOF
 
 	if json_is_a system object; then
@@ -530,4 +552,9 @@ if [ ! -s /etc/config/system ]; then
 	json_get_keys keys led
 	for key in $keys; do generate_led $key; done
 fi
+
+mac="$(hexdump -s 0x8 -n 2 /dev/mtd3|head -n 1 | tr -d ' ' | tr -d '\n' | tail -c 4)"
+sed -i "s/HiLink_AX3000_2.4G/HLK_AX3000_2G_${mac}/g" /etc/wireless/mediatek/mt7981.dbdc.b0.dat
+sed -i "s/HiLink_AX3000_5G/HLK_AX3000_5G_${mac}/g" /etc/wireless/mediatek/mt7981.dbdc.b1.dat
+
 uci commit

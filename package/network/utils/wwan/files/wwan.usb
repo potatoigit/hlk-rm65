@@ -8,6 +8,11 @@
 vid=$(cat /sys$DEVPATH/idVendor)
 pid=$(cat /sys$DEVPATH/idProduct)
 [ -f "/lib/network/wwan/$vid:$pid" ] || exit 0
+chmod 755 /etc/mobile_probe
+/etc/mobile_probe $vid $pid
+
+[ -f "/lib/network/wwan/$vid:$pid" ] || exit 0
+
 
 find_wwan_iface() {
 	local cfg="$1"

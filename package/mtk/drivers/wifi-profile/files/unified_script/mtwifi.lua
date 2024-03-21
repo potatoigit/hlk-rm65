@@ -94,6 +94,7 @@ function mtwifi_up(devname)
     local wifi_services_exist = false
     local l1profile = "/etc/wireless/l1profile.dat"
     local uci = shuci.decode("/etc/config/wireless")
+    local uci_dhcp = shuci.decode("/etc/config/dhcp")
 
     if devname then
         local profiles = mtkdat.search_dev_and_profile()
@@ -123,7 +124,7 @@ function mtwifi_up(devname)
         end
 
         local devname2 = string.gsub(devname, "%.", "_")
-        local uci_dev = uci_get_dev_by_dev_name(uci, devname2)
+        --local uci_dev = uci_get_dev_by_dev_name(uci, devname2)
         local profile = mtkdat.search_dev_and_profile()[devname]
         local cfgs = mtkdat.load_profile(profile)
         -- we have to bring up main_ifname first, main_ifname will create all other vifs.
@@ -137,7 +138,7 @@ function mtwifi_up(devname)
 
                 if uci_vif.disabled == nil or uci_vif.disabled ~= '1' then
                     if uci_vif.mode == "ap" then
-                        hostapd_setup_vif(uci_dev, uci_vif)
+                        --hostapd_setup_vif(uci_dev, uci_vif)
                         hostapd_enable_vif(dev.main_ifname, uci_vif[".name"])
                     end
                 end
@@ -151,14 +152,22 @@ function mtwifi_up(devname)
             if vif ~= dev.main_ifname then
                 if string.match(vif, esc(dev.apcli_ifname).."[0-9]+") then
                     if not mtkdat.exist("/etc/init.d/wpad") then
-                        nixio.syslog("debug", "mtwifi_up: ifconfig "..vif.." up")
-                        os.execute("ifconfig "..vif.." up")
-                        add_vif_into_lan(vif)
+                        if tonumber(cfgs.ApCliEnable, 10) == 1 then
+                            nixio.syslog("debug", "mtwifi_up: ifconfig "..vif.." up")
+                            os.execute("ifconfig "..vif.." up")
+                            if rawget(uci_dhcp["dhcp"][1], "ignore") ~= nil and tonumber(uci_dhcp["dhcp"][1]["ignore"]) == 1 then
+                                add_vif_into_lan(vif)
+                            end
+                            os.execute("iwpriv "..vif.." set ApCliAutoConnect=3")
+                            os.execute("echo "..vif.."> /tmp/autoconnect")
+                        end
+
+                        --add_vif_into_lan(vif)
                     else
                         local uci_vif = uci_get_vif_by_vif_name(uci, vif)
 
                         if uci_vif.mode == "sta" then
-                            supp_setup_vif(uci_dev, uci_vif)
+                            --supp_setup_vif(uci_dev, uci_vif)
                             supp_enable_vif(uci_vif[".name"])
                             if uci_vif.disabled ~= nil and uci_vif.disabled == '1' then
                                 os.execute("ifconfig "..vif.." down")
@@ -184,7 +193,7 @@ function mtwifi_up(devname)
                    string.match(uci_vif[".name"], esc(dev.ext_ifname).."[0-9]+") then
                     if uci_vif.disabled == nil or uci_vif.disabled ~= '1' then
                         if uci_vif.mode == "ap" then
-                            hostapd_setup_vif(uci_dev, uci_vif)
+                            --hostapd_setup_vif(uci_dev, uci_vif)
                             hostapd_enable_vif(dev.main_ifname, uci_vif[".name"])
                         end
                     end
@@ -336,11 +345,6 @@ function mtwifi_reload(devname)
                 end
             end
         end
-    end
-
-    -- for ax7800 project, close the ra0.
-    if string.find(dev.profile_path, "ax7800") then
-        os.execute("ifconfig ra0 down")
     end
 end
 
