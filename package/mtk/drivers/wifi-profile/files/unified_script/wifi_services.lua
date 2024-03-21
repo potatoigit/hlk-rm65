@@ -29,7 +29,7 @@ function wifi_service_misc()
                 else
                     os.execute("./etc/init.d/easymesh_bridge start")
                 end
-            else
+            elseif first_card_cfgs.MapMode ~= '0' then
                 os.execute("./etc/init.d/easymesh start")
             end
         end

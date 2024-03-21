@@ -61,6 +61,7 @@ function index()
     entry({"admin", "mtk"}, firstchild(), _("MTK"), 80)
     entry({"admin", "mtk", "test"}, call("test"))
     entry({"admin", "mtk", "wifi"}, template("admin_mtk/mtk_wifi_overview"), _("WiFi configuration"), 1)
+
     entry({"admin", "mtk", "wifi", "chip_cfg_view"}, template("admin_mtk/mtk_wifi_chip_cfg")).leaf = true
     entry({"admin", "mtk", "wifi", "chip_cfg"}, call("chip_cfg")).leaf = true
     entry({"admin", "mtk", "wifi", "dev_cfg_view"}, template("admin_mtk/mtk_wifi_dev_cfg")).leaf = true
@@ -88,8 +89,8 @@ function index()
     entry({"admin", "mtk", "netmode", "net_cfg"}, call("net_cfg"))
     entry({"admin", "mtk", "console"}, template("admin_mtk/mtk_web_console"), _("Web Console"), 4)
     entry({"admin", "mtk", "webcmd"}, call("webcmd"))
-    -- entry({"admin", "mtk", "man"}, template("admin_mtk/mtk_wifi_man"), _("M.A.N"), 3)
-    -- entry({"admin", "mtk", "man", "cfg"}, call("man_cfg"))
+--  entry({"admin", "mtk", "man"}, template("admin_mtk/mtk_wifi_man"), _("M.A.N"), 3)
+--  entry({"admin", "mtk", "man", "cfg"}, call("man_cfg"))
     entry({"admin", "mtk", "wifi", "get_wps_info"}, call("get_WPS_Info")).leaf = true
     entry({"admin", "mtk", "wifi", "get_wifi_pin"}, call("get_wifi_pin")).leaf = true
     entry({"admin", "mtk", "wifi", "set_wifi_gen_pin"}, call("set_wifi_gen_pin")).leaf = true
@@ -235,6 +236,7 @@ local __mtkwifi_reload = function (devname)
     local wifi_restart = false
     local wifi_reload = false
     local profiles = mtkwifi.search_dev_and_profile()
+    
 
     for dev,profile in pairs(profiles) do
         if not devname or devname == dev then
@@ -607,13 +609,44 @@ function vif_del(dev, vif)
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
 end
 
-function vif_disable(iface)
+function vif_disable(devname, iface)
+    
+    --x = uci.cursor()
+    --lan_iflist = x:get("network", "lan", "ifname")
+    --lan_down_iflist = x:get("network", "lan", "down_ifname")
+
+    if iface == "apcli0" or iface == "apclix0" then
+    	os.execute("iwpriv "..iface.." set ApCliEnable=0")
+        local profiles = mtkwifi.search_dev_and_profile()    
+        local cfgs = mtkwifi.load_profile(profiles[devname])
+        cfgs.ApCliEnable = "0"
+        __mtkwifi_save_profile(cfgs, profiles[devname], false)
+    elseif iface == "ra0" then
+        cfgs.Ap2_4Enable = "0"
+    elseif iface == "rax0" then
+        cfgs.Ap5_8Enable = "0"
+    end
+    x:commit("network")
+
     os.execute("ifconfig "..iface.." down")
+    
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
 end
 
-function vif_enable(iface)
+function vif_enable(devname, iface)
+    if iface == "apcli0" or iface == "apclix0" then
+        local profiles = mtkwifi.search_dev_and_profile()    
+        local cfgs = mtkwifi.load_profile(profiles[devname])
+        cfgs.ApCliEnable = "1"
+        __mtkwifi_save_profile(cfgs, profiles[devname], false)
+    elseif iface == "ra0" then
+        cfgs.Ap2_4Enable = "1"
+    elseif iface == "rax0" then
+        cfgs.Ap5_8Enable = "1"
+    end
     os.execute("ifconfig "..iface.." up")
+    os.execute("iwpriv "..iface.." set ApCliEnable=1")
+
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
 end
 
@@ -1707,9 +1740,9 @@ function apcli_cfg(dev, vif)
         end
     end
 
-    if cfgs['ApCliEnable'] == '1' then
-        os.execute("brctl addif br-lan "..vif)
-    end
+    --if cfgs['ApCliEnable'] == '1' then
+    --    os.execute("brctl addif br-lan "..vif)
+    --end
 
     -- http.write_json(http.formvalue())
 
@@ -1734,7 +1767,39 @@ function apcli_cfg(dev, vif)
         -- os.execute("ManDaemon ")
     end
     ]=]
+    local need_network_restart = false
     __mtkwifi_save_profile(cfgs, profiles[devname], false)
+    if vif == "apcli0" then
+    	local res = os.execute("uci show network.wwan0 > /dev/null 2>&1")
+        --os.execute("logger "..tostring(res))
+        if res ~= 0 then
+            os.execute("uci set network.wwan0=interface")
+            os.execute("uci set network.wwan0.ifname=apcli0")
+            os.execute("uci set network.wwan0.proto=dhcp")
+            --os.execute("uci add_list firewall.@zone[1].network='wwan0'")
+
+            os.execute("cur_wan_list=`uci get firewall.@zone[1].network`;uci set firewall.@zone[1].network=\"$cur_wan_list wwan0\"")
+            os.execute("uci commit")
+            --os.execute("/etc/init.d/network reload")
+            --os.execute("iwpriv apcli0 set ApCliAutoConnect=3")
+            need_network_restart = true
+        end
+    elseif vif == "apclix0" then
+        local res = os.execute("uci show network.wwan1 > /dev/null 2>&1")
+        --os.execute("logger "..tostring(res))
+        if res ~= 0 then
+            os.execute("uci set network.wwan1=interface")
+            os.execute("uci set network.wwan1.ifname=apclix0")
+            os.execute("uci set network.wwan1.proto=dhcp")
+            --os.execute("uci add_list firewall.@zone[1].network='wwan1'")
+
+            os.execute("cur_wan_list=`uci get firewall.@zone[1].network`;uci set firewall.@zone[1].network=\"$cur_wan_list wwan1\"")
+            os.execute("uci commit")
+            --os.execute("/etc/init.d/network reload")
+            --os.execute("iwpriv apclix0 set ApCliAutoConnect=3")
+            need_network_restart = true
+        end
+    end
 
     -- M.A.N Push parameters
     -- They are not part of wifi profile, we save it into /etc/man.conf.
@@ -1775,6 +1840,9 @@ function apcli_cfg(dev, vif)
         mtkwifi.__run_in_child_env(__mtkwifi_reload, devname)
         local url_to_visit_after_reload = luci.dispatcher.build_url("admin", "mtk", "wifi", "apcli_cfg_view", dev, vif)
         luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi", "loading",url_to_visit_after_reload))
+        --if need_network_restart then
+        os.execute("ifconfig ra0 down;ifconfig rax0 down;ifconfig apclix0 down;ifconfig apcli0 down;/etc/init.d/network restart")
+        --end
     else
         luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi", "apcli_cfg_view", dev, vif))
     end
@@ -1816,6 +1884,33 @@ function apcli_connect(dev, vif)
         or cfgs.ApCliAuthMode == "WPAPSKWPA2PSK" then
         os.execute("iwpriv "..vifname.." set ApCliWPAPSK=\""..mtkwifi.__handleSpecialChars(cfgs.ApCliWPAPSK).."\"")
     end
+
+    if vif == "apcli0" then
+    	local res = os.execute("uci show network.wwan0 > /dev/null 2>&1")
+        --os.execute("logger "..tostring(res))
+        if res ~= 0 then
+            os.execute("uci set network.wwan0=interface")
+            os.execute("uci set network.wwan0.ifname=apclii0")
+            os.execute("uci set network.wwan0.proto=dhcp")
+            
+            --os.execute("uci add_list firewall.@zone[2].network='wwan0'")
+            os.execute("cur_wan_list=`uci get firewall.@zone[1].network`;uci set firewall.@zone[1].network=\"$cur_wan_list wwan0\"")
+            os.execute("uci commit")
+        end
+    elseif vif == "apclix0" then
+        local res = os.execute("uci show network.wwan1 > /dev/null 2>&1")
+        --os.execute("logger "..tostring(res))
+        if res ~= 0 then
+            os.execute("uci set network.wwan1=interface")
+            os.execute("uci set network.wwan1.ifname=apclii0")
+            os.execute("uci set network.wwan1.proto=dhcp")
+            --os.execute("uci add_list firewall.@zone[1].network='wwan1'")
+            os.execute("cur_wan_list=`uci get firewall.@zone[1].network`;uci set firewall.@zone[1].network=\"$cur_wan_list wwan1\"")
+
+            os.execute("uci commit")
+        end
+    end
+
     os.execute("iwpriv "..vifname.." set ApCliSsid=\""..mtkwifi.__handleSpecialChars(cfgs.ApCliSsid).."\"")
     os.execute("iwpriv "..vifname.." set ApCliEnable=1")
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
