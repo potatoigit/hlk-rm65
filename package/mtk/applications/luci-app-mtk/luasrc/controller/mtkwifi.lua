@@ -626,7 +626,7 @@ function vif_disable(devname, iface)
     elseif iface == "rax0" then
         cfgs.Ap5_8Enable = "0"
     end
-    x:commit("network")
+    --x:commit("network")
 
     os.execute("ifconfig "..iface.." down")
     
@@ -644,8 +644,10 @@ function vif_enable(devname, iface)
     elseif iface == "rax0" then
         cfgs.Ap5_8Enable = "1"
     end
-    os.execute("ifconfig "..iface.." up")
-    os.execute("iwpriv "..iface.." set ApCliEnable=1")
+    if iface ~= nil then
+    	os.execute("ifconfig "..iface.." up")
+    	os.execute("iwpriv "..iface.." set ApCliEnable=1")
+    end
 
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
 end
