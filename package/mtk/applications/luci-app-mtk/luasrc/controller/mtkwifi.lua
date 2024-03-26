@@ -610,23 +610,22 @@ function vif_del(dev, vif)
 end
 
 function vif_disable(devname, iface)
-    
+    local profiles = mtkwifi.search_dev_and_profile()    
+    local cfgs = mtkwifi.load_profile(profiles[devname])
     --x = uci.cursor()
     --lan_iflist = x:get("network", "lan", "ifname")
     --lan_down_iflist = x:get("network", "lan", "down_ifname")
 
     if iface == "apcli0" or iface == "apclix0" then
     	os.execute("iwpriv "..iface.." set ApCliEnable=0")
-        local profiles = mtkwifi.search_dev_and_profile()    
-        local cfgs = mtkwifi.load_profile(profiles[devname])
         cfgs.ApCliEnable = "0"
-        __mtkwifi_save_profile(cfgs, profiles[devname], false)
     elseif iface == "ra0" then
         cfgs.Ap2_4Enable = "0"
     elseif iface == "rax0" then
         cfgs.Ap5_8Enable = "0"
     end
     --x:commit("network")
+    __mtkwifi_save_profile(cfgs, profiles[devname], false)
 
     os.execute("ifconfig "..iface.." down")
     
@@ -634,11 +633,10 @@ function vif_disable(devname, iface)
 end
 
 function vif_enable(devname, iface)
+    local profiles = mtkwifi.search_dev_and_profile()    
+    local cfgs = mtkwifi.load_profile(profiles[devname])
     if iface == "apcli0" or iface == "apclix0" then
-        local profiles = mtkwifi.search_dev_and_profile()    
-        local cfgs = mtkwifi.load_profile(profiles[devname])
         cfgs.ApCliEnable = "1"
-        __mtkwifi_save_profile(cfgs, profiles[devname], false)
     elseif iface == "ra0" then
         cfgs.Ap2_4Enable = "1"
     elseif iface == "rax0" then
@@ -648,6 +646,7 @@ function vif_enable(devname, iface)
     	os.execute("ifconfig "..iface.." up")
     	os.execute("iwpriv "..iface.." set ApCliEnable=1")
     end
+    __mtkwifi_save_profile(cfgs, profiles[devname], false)
 
     luci.http.redirect(luci.dispatcher.build_url("admin", "mtk", "wifi"))
 end
