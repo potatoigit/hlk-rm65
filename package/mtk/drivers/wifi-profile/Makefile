@@ -60,6 +60,7 @@ define Package/wifi-profile/install
 	$(INSTALL_DIR) $(1)/sbin/
 	echo $(PKG_VERSION) > $(1)/etc/wireless/mediatek/version
 	$(INSTALL_BIN) ./files/common/firmware.sh $(1)/etc/init.d/
+	if [ "$$(CONFIG_MTK_WIFI7_UNIFIED_COMMAND)" = "y" ]; then \
 		$(INSTALL_BIN) ./files/unified_script/wifi $(1)/sbin/; \
 		$(INSTALL_BIN) ./files/unified_script/mtwifi.lua $(1)/lib/wifi/; \
 		$(INSTALL_BIN) ./files/unified_script/mtkdat.lua $(1)/lib/wifi/; \
@@ -69,6 +70,14 @@ define Package/wifi-profile/install
 		if [ "$$(CONFIG_WIFI_QUICK_SETTING)" = "y" ] ; then \
 			$(INSTALL_BIN) ./files/unified_script/quick_setting.lua $(1)/lib/wifi/; \
 		fi; \
+	else \
+		$(INSTALL_BIN) ./files/common/wifi_jedi $(1)/sbin/wifi; \
+		$(INSTALL_BIN) ./files/common/mtwifi.lua $(1)/lib/wifi/; \
+		$(INSTALL_BIN) ./files/common/wifi_services.lua $(1)/lib/wifi/; \
+		if [ "$$(CONFIG_WIFI_QUICK_SETTING)" = "y" ] ; then \
+			$(INSTALL_BIN) ./files/common/quick_setting.lua $(1)/lib/wifi/; \
+		fi; \
+	fi
 
 	# Example combination mt7622 + mt7615e/a + mt7615e/a.
 	if [ "$$(CONFIG_first_card_name)" = "MT7622" ] ; then \
