@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006 OpenWrt.org
+
+START=60
+USE_PROCD=1
+
+BIN=/sbin/get_ip_rate
+
+start_service(){
+	local enable
+	config_load get_ip_rate
+	config_get enable rate enable
+
+	if [ $enable == "1" ];then
+		procd_open_instance
+		procd_set_param command $BIN
+		procd_set_param respawn
+		procd_close_instance
+	fi
+}
+

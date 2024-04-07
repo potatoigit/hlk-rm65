@@ -19,6 +19,7 @@ define Package/get_ip_rate
 	#SUBMENU:=get_ip_rate
 	SECTION:=soft
 	TITLE:=get dhcp ip rate
+	DEPENDS:= +libpcap +libpthread
 endef
 
 define Package/get_ip_rate/description
@@ -31,13 +32,25 @@ define Build/Prepare
 	$(CP) ./src/* $(PKG_BUILD_DIR)
 endef
 
+define Build/Compile
+$(MAKE) -C $(PKG_BUILD_DIR) $(TARGET_CONFIGURE_OPTS)
+endef
+
+target=$(firstword $(subst -, ,$(BOARD)))
+
 define Package/get_ip_rate/install
 	$(INSTALL_DIR) $(1)/etc/init.d		
-	$(INSTALL_BIN) ./files/set_iptables_rule.init $(1)/etc/init.d/set_iptables_rule
-	$(INSTALL_DIR) $(1)/sbin
-	$(INSTALL_BIN) ./files/set_iptables_rule $(1)/sbin/set_iptables_rule
-	$(INSTALL_DIR) $(1)/sbin
-	$(INSTALL_BIN) ./files/get_ip_rate $(1)/sbin/get_ip_rate
+	$(INSTALL_BIN) ./files/get_ip_rate.init $(1)/etc/init.d/get_ip_rate
+	$(INSTALL_DIR) $(1)/etc/config		
+	$(INSTALL_BIN) ./files/get_ip_rate.config $(1)/etc/config/get_ip_rate
+	#$(INSTALL_DIR) $(1)/sbin
+	#$(INSTALL_BIN) ./files/set_iptables_rule $(1)/sbin/set_iptables_rule
+	#$(INSTALL_DIR) $(1)/sbin
+	#$(INSTALL_BIN) ./files/get_ip_rate $(1)/sbin/get_ip_rate
+
+	$(INSTALL_DIR) $(1)/sbin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/get_ip_rate $(1)/sbin/
+	#$(INSTALL_BIN) $(PKG_BUILD_DIR)/get_ip_rate $(TARGET_DIR)/sbin/
 endef
 
 $(eval $(call BuildPackage,get_ip_rate))
