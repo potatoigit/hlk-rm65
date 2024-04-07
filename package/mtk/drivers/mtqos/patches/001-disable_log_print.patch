@@ -1,0 +1,13 @@
+Index: mtqos/mtqos.h
+===================================================================
+--- mtqos.orig/mtqos.h
++++ mtqos/mtqos.h
+@@ -94,7 +94,7 @@ typedef char CHAR;
+ #define DBG_LVL_INFO	4
+ #define DBG_LVL_LOUD	5
+ 
+-unsigned long dbg_level = DBG_LVL_ERROR;
++unsigned long dbg_level = DBG_LVL_OFF;
+ 
+ #define DBGPRINT(Level, fmt, args...)	\
+ {					\
